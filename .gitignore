@@ -1,0 +1,10 @@
+*~
+__debug_bin*
+samples/
+ref/
+*.pdf
+# os junk
+.DS_Store
+/*.dat
+/*.prn
+*.7z

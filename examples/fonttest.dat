@@ -1,0 +1,28 @@
+"** fonttest.dat **"
+
+ESC "@"
+"Font A:" LF
+ESC "M" 0
+"This is font A" LF
+
+ESC "@"
+"Font B:" LF
+ESC "M" 1
+"This is font B" LF
+
+ESC "@"
+"Font C:" LF
+ESC "M" 2
+"This is font C" LF
+
+ESC "@"
+"Special font A:" LF
+ESC "M" 97
+"This is Special font A" LF
+
+ESC "@"
+"Special font B:" LF
+ESC "M" 98
+"This is Special font B" LF
+
+ESC "@"

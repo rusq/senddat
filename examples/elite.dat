@@ -1,0 +1,14 @@
+'// Elite test
+ESC "@"
+
+'// delay
+*500
+
+ESC "!" 1
+"Elite font test" LF
+ESC "!" 0
+"Normal font test" LF
+ESC "-" 1
+"Underline mode" LF
+ESC "-" 0 "No underline LF"
+

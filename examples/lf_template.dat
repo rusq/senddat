@@ -1,0 +1,21 @@
+'// Line feed test, output a line in the ESC * mode and see if it connects
+ESC "@"
+'// Unidirectional
+ESC "U" 1
+
+'// open source senddat extension, ranges through counter from 15 to 16.
+{{ range $n := count 15 16 }}
+	"Spacing: {{$n}}" LF
+	ESC "*" 0 5 0
+	0xFF 0x00 0xFF 0x00 0xFF
+	ESC "J" {{ $n }}
+
+	ESC "*" 0 4 0
+	0x00 0xFF 0x00 0xFF
+	ESC "J" {{ $n }}
+
+	LF
+{{end}}
+
+ESC "@"
+ESC "E" 1 "END OF TEST" LF ESC "E" 0

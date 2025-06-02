@@ -1,0 +1,5 @@
+receipt.dat https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/receipt.html
+graphics.dat https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/graphics.html
+page_mode.dat https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/pagemode.html
+barcode_receipt.dat https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/receipt_with_barcode.html
+label.dat https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/label.html
