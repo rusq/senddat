@@ -82,6 +82,18 @@ Following functions are predefined:
     ESC "E" 1 "END OF TEST" LF ESC "E" 0
 ```
 
+## Motivation
+This project was created to provide an open-source alternative to the EPSON
+Send Data tool, which is not available for all platforms and has limited
+functionality. The goal is to provide a flexible and extensible tool for
+sending raw data to ESC/POS printers, with support for templating and other
+features that make it easier to work with printers in various environments.
+
+## Installation
+```shell
+go install github.com/rusq/senddat/cmd/senddat@latest
+```
+
 ## Legal
 Senddat-OS is BSD licensed.
 
