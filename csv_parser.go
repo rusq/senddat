@@ -51,16 +51,24 @@ func LoadCommandSpecsWithSubcommands(cmdCSV, subCSV string) ([]CommandSpec, erro
 	return cmds, nil
 }
 
+type parseFunc func(s string) ([]byte, error)
+
+// defParseFn is the default parsing function for commands.  There are two
+// currently to choose from:
+//  1. ParseString - parses expressions like `ESC "@"'
+//  2. parseHexBytes - parses hex bytes, i.e. `1B 40'
+var defParseFn parseFunc = ParseString
+
 func loadCommandSpecs(csvPath string) ([]CommandSpec, error) {
 	f, err := os.Open(csvPath)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	return readCommandSpecs(f)
+	return readCommandSpecs(f, ParseString)
 }
 
-func readCommandSpecs(r io.Reader) ([]CommandSpec, error) {
+func readCommandSpecs(r io.Reader, parseFn parseFunc) ([]CommandSpec, error) {
 	cr := csv.NewReader(r)
 	cr.TrimLeadingSpace = true
 	header, err := cr.Read()
@@ -77,12 +85,13 @@ func readCommandSpecs(r io.Reader) ([]CommandSpec, error) {
 			return nil, err
 		}
 
+		// header is expected to be: "prefix,name,arg_names,payload_formula"
 		rowMap := map[string]string{}
 		for i, key := range header {
 			rowMap[key] = row[i]
 		}
 
-		prefix, err := parseHexBytes(rowMap["prefix"])
+		prefix, err := parseFn(rowMap["prefix"])
 		if err != nil {
 			return nil, fmt.Errorf("prefix %q: %v", rowMap["prefix"], err)
 		}
@@ -109,13 +118,26 @@ func readCommandSpecs(r io.Reader) ([]CommandSpec, error) {
 	return specs, nil
 }
 
+// TODO: finish with subcommands.
 func loadSubcommands(csvPath string) (map[string]map[string]string, error) {
 	f, err := os.Open(csvPath)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	return readSubcommands(f, defParseFn)
+}
 
+type SubCommands map[string]Subcommand
+
+type Subcommand struct {
+	Prefix   string
+	Cn       byte
+	Fn       byte
+	Argcount string
+}
+
+func readSubcommands(f io.Reader, parseFn parseFunc) (map[string]map[string]string, error) {
 	r := csv.NewReader(f)
 	r.TrimLeadingSpace = true
 	header, err := r.Read()
@@ -138,7 +160,7 @@ func loadSubcommands(csvPath string) (map[string]map[string]string, error) {
 			rowMap[key] = row[i]
 		}
 
-		prefixBytes, err := parseHexBytes(rowMap["prefix"])
+		prefixBytes, err := parseFn(rowMap["prefix"])
 		if err != nil || len(prefixBytes) < 2 {
 			return nil, fmt.Errorf("invalid subcommand prefix: %v", err)
 		}
@@ -212,6 +234,7 @@ func extractIdentifiersFromExpr(expr string) ([]string, error) {
 	return extractIdentifiers(node)
 }
 
+// extractIdentifiers extracts identifiers names from the expression.
 func extractIdentifiers(node ast.Expr) ([]string, error) {
 	seen := map[string]bool{}
 	var names []string

@@ -1,0 +1,10 @@
+prefix,name,arg_names,payload_formula
+"ESC ""@""","Initialize Printer",,
+"ESC ""*""","Bit Image Mode",m nL nH,"nL + 256 * nH"
+"ESC ""J""","Print and feed paper",n,
+"ESC ""U""","Enable Unidirectional Mode",n,
+"ESC ""a""","Set Justification",n,
+"ESC ""d""","Print and feed n lines",n,
+"GS ""V""","Cut Paper",n,
+"GS ""(V""",Paper Cut,pL pH,pL+pH*256
+"LF","Line Feed",,

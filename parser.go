@@ -1,6 +1,7 @@
 package senddat
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
 	"io"
@@ -70,7 +71,6 @@ func (ew *errWriter) Fprintf(format string, args ...any) {
 	}
 	ew.N += n
 }
-
 
 func Parse(w io.Writer, r io.Reader) error {
 	var s scanner.Scanner
@@ -144,4 +144,13 @@ func atob(t string) (byte, error) {
 		return 0, fmt.Errorf("scan error: %w", err)
 	}
 	return b, nil
+}
+
+// ParseString parses the string, like 'ESC "@"' and returns bytes.
+func ParseString(s string) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := Parse(&buf, strings.NewReader(s)); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
