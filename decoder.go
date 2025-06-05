@@ -154,32 +154,57 @@ func (p *Parser) NextCommand2() (*Command, error) {
 		}, nil
 	}
 
+	cmd, err := p.readCommand(cs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read command %s at position %d: %w", cs.Name, startPos, err)
+	}
+	cmd.Offset = startPos
+	return cmd, nil
+}
+
+func (p *Parser) readCommand(cs *CommandSpec) (*Command, error) {
+	if cs.ArgCount == 0 {
+		return &Command{
+			Spec: cs,
+		}, nil
+	}
+
+	// Read the command arguments
 	args, err := p.readBytes(cs.ArgCount)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read command args at position %d: %w", startPos, err)
+		if errors.Is(err, io.EOF) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to read command args: %w", err)
 	}
 	if len(args) < cs.ArgCount {
-		return nil, fmt.Errorf("expected %d args for command %s, got %d at position %d", cs.ArgCount, cs.Name, len(args), startPos)
+		return nil, fmt.Errorf("expected %d args for command %s, got %d", cs.ArgCount, cs.Name, len(args))
 	}
 	var payload []byte
-	if cs.payloadFn != nil {
-		payloadLen, err := cs.payloadFn(args)
+	if cs.payloadFn == nil {
+		return &Command{
+			Spec: cs,
+			Args: args,
+		}, nil // No payload function, just return args
+	}
+
+	// Execute the payload function to determine the length of the payload
+	// and read the payload data if necessary.
+	payloadLen, err := cs.payloadFn(args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute payload function for command %s at: %w", cs.Name, err)
+	}
+	if payloadLen > 0 {
+		payload, err = p.readBytes(payloadLen)
 		if err != nil {
-			return nil, fmt.Errorf("failed to execute payload function for command %s at position %d: %w", cs.Name, startPos, err)
+			return nil, fmt.Errorf("failed to read payload for command %s: %w", cs.Name, err)
 		}
-		if payloadLen > 0 {
-			payload, err = p.readBytes(payloadLen)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read payload for command %s at position %d: %w", cs.Name, startPos, err)
-			}
-			if len(payload) < payloadLen {
-				return nil, fmt.Errorf("expected %d bytes of payload for command %s, got %d at position %d", payloadLen, cs.Name, len(payload), startPos)
-			}
+		if len(payload) < payloadLen {
+			return nil, fmt.Errorf("expected %d bytes of payload for command %s, got %d", payloadLen, cs.Name, len(payload))
 		}
 	}
 
 	var c = &Command{
-		Offset:  startPos,
 		Spec:    cs,
 		Args:    args,
 		Payload: payload,
@@ -189,6 +214,10 @@ func (p *Parser) NextCommand2() (*Command, error) {
 
 var errUnhandled = errors.New("unhandled command prefix")
 
+// findComSpec traverses the trie to find a command specification based on the
+// bytes read from the provided ByteScanner. It returns the CommandSpec if found,
+// a boolean indicating if a spec was found, and an error if any occurred during
+// reading.
 func findComSpec(n *trieNode, r io.ByteScanner) (*CommandSpec, bool, error) {
 	current := n
 	for depth := 0; ; depth++ {
@@ -199,6 +228,11 @@ func findComSpec(n *trieNode, r io.ByteScanner) (*CommandSpec, bool, error) {
 
 		if nextNode, exists := current.children[b]; exists {
 			current = nextNode
+			// I checked the ESC/POS spec and it doesn't seem that commands
+			// that have n bytes are ever used in n-1 byte form, so we can
+			// safely return the spec if it exists, as it guarantees that
+			// depth+1 does not exist.
+			// TODO: validate once the full spec is compiled.
 			if current.spec != nil {
 				return current.spec, true, nil // Found a command spec
 			}

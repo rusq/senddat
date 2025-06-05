@@ -8,3 +8,4 @@ prefix,name,arg_names,payload_formula
 "GS ""V""","Cut Paper",n,
 "GS ""(V""",Paper Cut,pL pH,pL+pH*256
 "LF","Line Feed",,
+"CR","Carriage Return",,
