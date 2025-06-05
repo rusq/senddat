@@ -2,6 +2,7 @@ package senddat
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -86,6 +87,10 @@ func (c *Command) Name() string {
 	return "INVALID COMMAND"
 }
 
+func (c Command) String() string {
+	return c.Name() + fmt.Sprintf(" at %d: %x", c.Offset, c.Bytes)
+}
+
 type Parser struct {
 	r     *bufio.Reader
 	cst   *trieNode // Trie for command specs
@@ -138,28 +143,50 @@ func (p *Parser) ReadByte() (byte, error) {
 
 func (p *Parser) NextCommand2() (*Command, error) {
 	startPos := p.pos
-	cs, found, err := findComSpec(p.cst, p)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
+	var accum bytes.Buffer
+	for {
+		cs, found, err := findComSpec(p.cst, p)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			cmd, err := p.readCommand(cs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read command %s at position %d: %w", cs.Name, startPos, err)
+			}
+			cmd.Offset = startPos
+			return cmd, nil
+		}
+		peeked, err := p.r.Peek(1)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if accum.Len() > 0 {
+					// If we have accumulated bytes, return them as a raw command
+					return &Command{
+						Offset: startPos,
+						Bytes:  accum.Bytes(),
+					}, nil
+				}
+				return nil, fmt.Errorf("unexpected EOF at position %d", startPos)
+			}
+			return nil, fmt.Errorf("failed to peek byte at position %d: %w", startPos, err)
+		}
+		if _, ok := p.cst.findChild(peeked[0]); ok {
+			return &Command{
+				Offset: startPos,
+				Bytes:  accum.Bytes(),
+			}, nil // Return accumulated bytes as a raw command
+		}
+
 		b, err := p.readByte()
 		if err != nil {
 			return nil, err
 		}
-		// If we can't find a command spec, treat it as a raw byte command
-		return &Command{
-			Offset: startPos,
-			Bytes:  []byte{b},
-		}, nil
+		if err := accum.WriteByte(b); err != nil {
+			return nil, fmt.Errorf("failed to write byte %02X at position %d: %w", peeked, startPos, err)
+		}
 	}
 
-	cmd, err := p.readCommand(cs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read command %s at position %d: %w", cs.Name, startPos, err)
-	}
-	cmd.Offset = startPos
-	return cmd, nil
 }
 
 func (p *Parser) readCommand(cs *CommandSpec) (*Command, error) {
