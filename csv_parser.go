@@ -2,6 +2,7 @@ package senddat
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -79,7 +80,7 @@ func readCommandSpecs(r io.Reader, parseFn parseFunc) ([]CommandSpec, error) {
 	var specs []CommandSpec
 	for {
 		row, err := cr.Read()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return nil, err

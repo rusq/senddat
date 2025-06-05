@@ -2,6 +2,7 @@ package senddat
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,57 +25,79 @@ func (e *DecodeError) Unwrap() error {
 	return e.Err
 }
 
-func Decode(w io.Writer, r io.Reader) error {
+// Decode decodes a stream of PRN commands from the provided reader using the
+// provided command specifications. It returns a slice of Command structs or an
+// error if decoding fails.
+func Decode(r io.Reader, spec []CommandSpec) ([]Command, error) {
 	// Create a new parser instance
+	p, err := NewParser(r, spec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create parser: %w", err)
+	}
+
 	var decerr = func(offset int, msg string, err ...error) error {
 		if len(err) > 0 {
 			return &DecodeError{Message: msg, Offset: offset, Err: err[0]}
 		}
 		return &DecodeError{Message: msg, Offset: offset}
 	}
-	var ew = errWriter{Writer: w}
 
-	p := NewParser(r)
-
+	var commands []Command
 LOOP:
 	for {
-		if ew.Err != nil {
-			return ew.Err
-		}
-
-		cmd, err := p.NextCommand()
+		cmd, err := p.NextCommand2()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break LOOP // End of stream
 			}
-			return decerr(p.pos, "failed to read command", err)
+			return nil, decerr(p.pos, "failed to read command", err)
 		}
 		if cmd == nil {
 			continue // Skip nil commands
 		}
-		slog.Debug("command", "offset", cmd.Offset, "name", cmd.Name, "args", cmd.Args)
+		commands = append(commands, *cmd)
+		slog.Debug("command", "offset", cmd.Offset, "name", cmd.Name(), "args", cmd.Args)
 	}
 
-	return nil
+	return commands, nil
 }
 
 type Command struct {
-	Offset int    // Position in the input stream
-	Bytes  []byte // Raw bytes of the command
-	Name   string // Decoded command name
-	Args   []byte // Optional arguments
+	// Position in the input stream
+	Offset int
+	// Spec is the command specification.
+	Spec  *CommandSpec
+	Bytes []byte // Raw bytes, if it's not a known command
+	// Args is the optional arguments for commands that have them. i.e. for ESC
+	// J n, will contain the value of n
+	Args []byte
+	// Payload is the optional payload data for commands that have it, like:
+	// ESC * m nL nH data
+	Payload []byte
+}
+
+func (c *Command) Name() string {
+	if c.Spec != nil {
+		return c.Spec.Name
+	}
+	if len(c.Bytes) == 0 {
+		return fmt.Sprintf("Raw Bytes 0x%02X", c.Bytes[0])
+	}
+	return "INVALID COMMAND"
 }
 
 type Parser struct {
 	r     *bufio.Reader
-	pos   int // Running byte offset in the stream
-	limit int // Optional read limit (0 = no limit)
+	cst   *trieNode // Trie for command specs
+	pos   int       // Running byte offset in the stream
+	limit int       // Optional read limit (0 = no limit)
 }
 
-func NewParser(r io.Reader) *Parser {
+func NewParser(r io.Reader, spec []CommandSpec) (*Parser, error) {
 	return &Parser{
-		r: bufio.NewReader(r),
-	}
+		r:   bufio.NewReader(r),
+		cst: buildTrie(spec),
+	}, nil
 }
 
 // Helper: read exactly one byte
@@ -86,163 +109,107 @@ func (p *Parser) readByte() (byte, error) {
 	return b, err
 }
 
-func (p *Parser) NextCommand() (*Command, error) {
+func (p *Parser) readBytes(n int) ([]byte, error) {
+	if n < 0 {
+		return nil, fmt.Errorf("invalid read length: %d", n)
+	} else if n == 0 {
+		return nil, nil // No bytes to read
+	}
+
+	data := make([]byte, n)
+	if _, err := io.ReadFull(p.r, data); err != nil {
+		return nil, fmt.Errorf("failed to read %d bytes at position %d: %w", n, p.pos, err)
+	}
+	p.pos += n
+	return data, nil
+}
+
+func (p *Parser) UnreadByte() error {
+	if err := p.r.UnreadByte(); err != nil {
+		return fmt.Errorf("failed to unread byte at position %d: %w", p.pos, err)
+	}
+	p.pos--
+	return nil
+}
+
+func (p *Parser) ReadByte() (byte, error) {
+	return p.readByte()
+}
+
+func (p *Parser) NextCommand2() (*Command, error) {
 	startPos := p.pos
-	b, err := p.readByte()
+	cs, found, err := findComSpec(p.cst, p)
 	if err != nil {
 		return nil, err
 	}
-
-	switch b {
-	case 0x1B: // ESC
-		second, err := p.readByte()
+	if !found {
+		b, err := p.readByte()
 		if err != nil {
-			return nil, io.ErrUnexpectedEOF
+			return nil, err
 		}
-
-		switch second {
-		case '@':
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{0x1B, second},
-				Name:   "Initialize Printer (ESC @)",
-			}, nil
-
-		case 'J': // Print and feed paper
-			n, err := p.readByte()
-			if err != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{0x1B, second, n},
-				Name:   fmt.Sprintf("Print and Feed Paper (ESC J = %d)", n),
-				Args:   []byte{n},
-			}, nil
-
-		case 'U': // Enable unidirectional printing
-			n, err := p.readByte()
-			if err != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{0x1B, second, n},
-				Name:   fmt.Sprintf("Set Unidirectional Printing (ESC U = %d)", n),
-				Args:   []byte{n},
-			}, nil
-
-		case 'a':
-			align, err := p.readByte()
-			if err != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{0x1B, second, align},
-				Name:   fmt.Sprintf("Set Justification (ESC a = %d)", align),
-				Args:   []byte{align},
-			}, nil
-
-		case 'd': // print and feed n lines
-			n, err := p.readByte()
-			if err != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{0x1B, second, n},
-				Name:   fmt.Sprintf("Print and Feed %d Lines (ESC d = %d)", n, n),
-				Args:   []byte{n},
-			}, nil
-
-		case '*': // Bit image mode
-			mode, err := p.readByte()
-			if err != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-
-			nL, err := p.readByte()
-			if err != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-
-			nH, err := p.readByte()
-			if err != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-
-			dataLen := int(nL) + int(nH)*256
-			data := make([]byte, dataLen)
-			if _, err := io.ReadFull(p.r, data); err != nil {
-				return nil, fmt.Errorf("incomplete ESC * image payload: %w", err)
-			}
-			p.pos += dataLen
-
-			full := append([]byte{0x1B, second, mode, nL, nH}, data...)
-			return &Command{
-				Offset: startPos,
-				Bytes:  full,
-				Name:   fmt.Sprintf("Bit Image Mode (ESC * m=%d, n=%d)", mode, dataLen),
-				Args:   append([]byte{mode, nL, nH}, data...),
-			}, nil
-
-		default:
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{0x1B, second},
-				Name:   fmt.Sprintf("Unknown ESC command: %[1]c 0x%[1]X", second),
-			}, nil
-		}
-
-	case 0x1D: // GS
-		second, err := p.readByte()
-		if err != nil {
-			return nil, io.ErrUnexpectedEOF
-		}
-
-		switch second {
-		case 'V':
-			mode, err := p.readByte()
-			if err != nil {
-				return nil, io.ErrUnexpectedEOF
-			}
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{0x1D, second, mode},
-				Name:   fmt.Sprintf("Cut Paper (GS V = %d)", mode),
-				Args:   []byte{mode},
-			}, nil
-
-		default:
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{0x1D, second},
-				Name:   fmt.Sprintf("Unknown GS command: 0x%X", second),
-			}, nil
-		}
-
-	case '\n':
-		return &Command{
-			Offset: startPos,
-			Bytes:  []byte{'\n'},
-			Name:   "Line Feed",
-		}, nil
-
-	default:
-		if b >= 0x20 && b <= 0x7E {
-			return &Command{
-				Offset: startPos,
-				Bytes:  []byte{b},
-				Name:   "Printable ASCII",
-			}, nil
-		}
+		// If we can't find a command spec, treat it as a raw byte command
 		return &Command{
 			Offset: startPos,
 			Bytes:  []byte{b},
-			Name:   fmt.Sprintf("Raw Byte 0x%02X", b),
 		}, nil
 	}
+
+	args, err := p.readBytes(cs.ArgCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read command args at position %d: %w", startPos, err)
+	}
+	if len(args) < cs.ArgCount {
+		return nil, fmt.Errorf("expected %d args for command %s, got %d at position %d", cs.ArgCount, cs.Name, len(args), startPos)
+	}
+	var payload []byte
+	if cs.payloadFn != nil {
+		payloadLen, err := cs.payloadFn(args)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute payload function for command %s at position %d: %w", cs.Name, startPos, err)
+		}
+		if payloadLen > 0 {
+			payload, err = p.readBytes(payloadLen)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read payload for command %s at position %d: %w", cs.Name, startPos, err)
+			}
+			if len(payload) < payloadLen {
+				return nil, fmt.Errorf("expected %d bytes of payload for command %s, got %d at position %d", payloadLen, cs.Name, len(payload), startPos)
+			}
+		}
+	}
+
+	var c = &Command{
+		Offset:  startPos,
+		Spec:    cs,
+		Args:    args,
+		Payload: payload,
+	}
+	return c, nil
 }
 
+var errUnhandled = errors.New("unhandled command prefix")
 
+func findComSpec(n *trieNode, r io.ByteScanner) (*CommandSpec, bool, error) {
+	current := n
+	for depth := 0; ; depth++ {
+		b, err := r.ReadByte()
+		if err != nil {
+			return nil, false, err // Error reading byte
+		}
+
+		if nextNode, exists := current.children[b]; exists {
+			current = nextNode
+			if current.spec != nil {
+				return current.spec, true, nil // Found a command spec
+			}
+		} else {
+			if depth > 0 {
+				return nil, false, errUnhandled // Unhandled command prefix
+			}
+			if err := r.UnreadByte(); err != nil {
+				return nil, false, err // Error unread byte
+			}
+			return nil, false, nil // No matching command found
+		}
+	}
+}
