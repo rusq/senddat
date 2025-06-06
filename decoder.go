@@ -29,7 +29,7 @@ func (e *DecodeError) Unwrap() error {
 // Decode decodes a stream of PRN commands from the provided reader using the
 // provided command specifications. It returns a slice of Command structs or an
 // error if decoding fails.
-func Decode(r io.Reader, spec []CommandSpec) ([]Command, error) {
+func Decode(r io.Reader, spec []CommandSpec) ([]Entry, error) {
 	// Create a new parser instance
 	p, err := NewParser(r, spec)
 	if err != nil {
@@ -43,10 +43,10 @@ func Decode(r io.Reader, spec []CommandSpec) ([]Command, error) {
 		return &DecodeError{Message: msg, Offset: offset}
 	}
 
-	var commands []Command
+	var commands []Entry
 LOOP:
 	for {
-		cmd, err := p.NextCommand2()
+		cmd, err := p.Next()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break LOOP // End of stream
@@ -63,12 +63,15 @@ LOOP:
 	return commands, nil
 }
 
-type Command struct {
-	// Position in the input stream
+// Entry represents a single command entry in the PRN stream.
+type Entry struct {
+	// Position in the input stream where the command or data starts.
 	Offset int
 	// Spec is the command specification.
-	Spec  *CommandSpec
-	Bytes []byte // Raw bytes, if it's not a known command
+	Spec *CommandSpec
+	// Data is the raw bytes read from the stream. If the command is known,
+	// it will be empty.
+	Data []byte
 	// Args is the optional arguments for commands that have them. i.e. for ESC
 	// J n, will contain the value of n
 	Args []byte
@@ -77,18 +80,52 @@ type Command struct {
 	Payload []byte
 }
 
-func (c *Command) Name() string {
+func (c Entry) IsRaw() bool {
+	return c.Spec == nil && len(c.Data) > 0
+}
+
+func (c Entry) IsEmpty() bool {
+	return c.Spec == nil && len(c.Data) == 0
+}
+
+func (c Entry) Name() string {
 	if c.Spec != nil {
 		return c.Spec.Name
 	}
-	if len(c.Bytes) == 0 {
-		return fmt.Sprintf("Raw Bytes 0x%02X", c.Bytes[0])
+	if len(c.Data) == 0 {
+		return fmt.Sprintf("Raw Bytes 0x%02X", c.Data[0])
 	}
 	return "INVALID COMMAND"
 }
 
-func (c Command) String() string {
-	return c.Name() + fmt.Sprintf(" at %d: %x", c.Offset, c.Bytes)
+func (c Entry) String() string {
+	if c.IsEmpty() {
+		return fmt.Sprintf("[@%6d:EMPTY]", c.Offset)
+	}
+	var buf bytes.Buffer
+	if c.IsRaw() {
+		return fmt.Sprintf("[@%6d:RAW,len=%d]", c.Offset, len(c.Data))
+	}
+	fmt.Fprintf(&buf, "[@%6d:%s", c.Offset, c.Name())
+	if len(c.Args) == 0 {
+		return buf.String() + "]"
+	}
+	args, err := c.Spec.ArgValues(c.Args)
+	if err != nil {
+		return fmt.Sprintf("[@%6d:ERROR %s]", c.Offset, err)
+	}
+	var argv []string
+	for name, value := range args {
+		argv = append(argv, fmt.Sprintf("%s=%d", name, value))
+	}
+	buf.WriteString(", args=")
+	buf.WriteString(fmt.Sprintf("%v", argv))
+	if len(c.Payload) > 0 {
+		buf.WriteString(fmt.Sprintf(", payload=%d bytes", len(c.Payload)))
+	}
+	buf.WriteString("]")
+	return buf.String()
+
 }
 
 type Parser struct {
@@ -141,7 +178,7 @@ func (p *Parser) ReadByte() (byte, error) {
 	return p.readByte()
 }
 
-func (p *Parser) NextCommand2() (*Command, error) {
+func (p *Parser) Next() (*Entry, error) {
 	startPos := p.pos
 	var accum bytes.Buffer
 	for {
@@ -152,7 +189,7 @@ func (p *Parser) NextCommand2() (*Command, error) {
 		if found {
 			cmd, err := p.readCommand(cs)
 			if err != nil {
-				return nil, fmt.Errorf("failed to read command %s at position %d: %w", cs.Name, startPos, err)
+				return nil, fmt.Errorf("failed to read entry %s at position %d: %w", cs.Name, startPos, err)
 			}
 			cmd.Offset = startPos
 			return cmd, nil
@@ -161,10 +198,10 @@ func (p *Parser) NextCommand2() (*Command, error) {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if accum.Len() > 0 {
-					// If we have accumulated bytes, return them as a raw command
-					return &Command{
+					// If we have accumulated bytes, return them as a raw entry
+					return &Entry{
 						Offset: startPos,
-						Bytes:  accum.Bytes(),
+						Data:   accum.Bytes(),
 					}, nil
 				}
 				return nil, fmt.Errorf("unexpected EOF at position %d", startPos)
@@ -172,9 +209,9 @@ func (p *Parser) NextCommand2() (*Command, error) {
 			return nil, fmt.Errorf("failed to peek byte at position %d: %w", startPos, err)
 		}
 		if _, ok := p.cst.findChild(peeked[0]); ok {
-			return &Command{
+			return &Entry{
 				Offset: startPos,
-				Bytes:  accum.Bytes(),
+				Data:   accum.Bytes(),
 			}, nil // Return accumulated bytes as a raw command
 		}
 
@@ -189,9 +226,9 @@ func (p *Parser) NextCommand2() (*Command, error) {
 
 }
 
-func (p *Parser) readCommand(cs *CommandSpec) (*Command, error) {
+func (p *Parser) readCommand(cs *CommandSpec) (*Entry, error) {
 	if cs.ArgCount == 0 {
-		return &Command{
+		return &Entry{
 			Spec: cs,
 		}, nil
 	}
@@ -209,7 +246,7 @@ func (p *Parser) readCommand(cs *CommandSpec) (*Command, error) {
 	}
 	var payload []byte
 	if cs.payloadFn == nil {
-		return &Command{
+		return &Entry{
 			Spec: cs,
 			Args: args,
 		}, nil // No payload function, just return args
@@ -231,7 +268,7 @@ func (p *Parser) readCommand(cs *CommandSpec) (*Command, error) {
 		}
 	}
 
-	var c = &Command{
+	var c = &Entry{
 		Spec:    cs,
 		Args:    args,
 		Payload: payload,
@@ -239,7 +276,7 @@ func (p *Parser) readCommand(cs *CommandSpec) (*Command, error) {
 	return c, nil
 }
 
-var errUnhandled = errors.New("unhandled command prefix")
+var errUnhandled = errors.New("unhandled command")
 
 // findComSpec traverses the trie to find a command specification based on the
 // bytes read from the provided ByteScanner. It returns the CommandSpec if found,
@@ -265,7 +302,7 @@ func findComSpec(n *trieNode, r io.ByteScanner) (*CommandSpec, bool, error) {
 			}
 		} else {
 			if depth > 0 {
-				return nil, false, errUnhandled // Unhandled command prefix
+				return nil, false, fmt.Errorf("%w: %x (\"%c\")", errUnhandled, b, b) // Unhandled command prefix
 			}
 			if err := r.UnreadByte(); err != nil {
 				return nil, false, err // Error unread byte

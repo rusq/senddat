@@ -1,6 +1,8 @@
 package senddat
 
 import (
+	"bytes"
+	_ "embed"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -12,6 +14,19 @@ import (
 	"strconv"
 	"strings"
 )
+
+//go:embed drivers/generic.csv
+var genericcsv []byte
+
+var GenericCommandSpecs []CommandSpec
+
+func init() {
+	var err error
+	GenericCommandSpecs, err = readCommandSpecs(bytes.NewReader(genericcsv), defParseFn)
+	if err != nil {
+		panic(fmt.Sprintf("failed to load generic command specs: %v", err))
+	}
+}
 
 type CommandSpec struct {
 	Prefix      []byte
@@ -29,6 +44,23 @@ func (cs CommandSpec) String() string {
 		fmt.Fprintf(&buf, "%c ", ch)
 	}
 	return buf.String()
+}
+
+// ArgValues returns a map of argument names to their values based on the provided args.
+func (cs CommandSpec) ArgValues(args []byte) (map[string]uint8, error) {
+	if len(args) != cs.ArgCount {
+		return nil, fmt.Errorf("expected %d args, got %d", cs.ArgCount, len(args))
+	}
+
+	argValues := make(map[string]uint8)
+	for i, name := range cs.ArgNames {
+		if i < len(args) {
+			argValues[name] = args[i]
+		} else {
+			argValues[name] = 0 // Default to 0 if no value provided
+		}
+	}
+	return argValues, nil
 }
 
 func LoadCommandSpecsWithSubcommands(cmdCSV, subCSV string) ([]CommandSpec, error) {

@@ -28,7 +28,7 @@ func TestDecode(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    []Command
+		want    []Entry
 		wantErr bool
 	}{
 		{
@@ -37,7 +37,7 @@ func TestDecode(t *testing.T) {
 				r:        bytes.NewReader(loadTestFile(t, "testdata/POS/80x72.prn")),
 				comspecs: genericComspecs,
 			},
-			want:    []Command{},
+			want:    []Entry{},
 			wantErr: false,
 		},
 	}

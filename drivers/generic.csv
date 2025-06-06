@@ -1,4 +1,6 @@
 prefix,name,arg_names,payload_formula
+"ESC ""!""","Select print mode(s)",n,
+"ESC ""-""","Turn underline mode on/off",n,
 "ESC ""@""","Initialize Printer",,
 "ESC ""*""","Bit Image Mode",m nL nH,"nL + 256 * nH"
 "ESC ""J""","Print and feed paper",n,
