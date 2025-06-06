@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-//go:embed drivers/generic.csv
+//go:embed drivers/escpos-3.40.csv
 var genericcsv []byte
 
 var GenericCommandSpecs []CommandSpec

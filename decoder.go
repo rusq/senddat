@@ -100,13 +100,13 @@ func (c Entry) Name() string {
 
 func (c Entry) String() string {
 	if c.IsEmpty() {
-		return fmt.Sprintf("[@%6d:EMPTY]", c.Offset)
+		return fmt.Sprintf("[@%6d: EMPTY]", c.Offset)
 	}
 	var buf bytes.Buffer
 	if c.IsRaw() {
-		return fmt.Sprintf("[@%6d:RAW,len=%d]", c.Offset, len(c.Data))
+		return fmt.Sprintf("[@%6d: RAW,len=%d %q]", c.Offset, len(c.Data), c.Data)
 	}
-	fmt.Fprintf(&buf, "[@%6d:%s", c.Offset, c.Name())
+	fmt.Fprintf(&buf, "[@%6d: %s", c.Offset, c.Name())
 	if len(c.Args) == 0 {
 		return buf.String() + "]"
 	}
@@ -182,18 +182,7 @@ func (p *Parser) Next() (*Entry, error) {
 	startPos := p.pos
 	var accum bytes.Buffer
 	for {
-		cs, found, err := findComSpec(p.cst, p)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			cmd, err := p.readCommand(cs)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read entry %s at position %d: %w", cs.Name, startPos, err)
-			}
-			cmd.Offset = startPos
-			return cmd, nil
-		}
+		// Peek the next byte to determine if it's a command or raw data
 		peeked, err := p.r.Peek(1)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -204,24 +193,44 @@ func (p *Parser) Next() (*Entry, error) {
 						Data:   accum.Bytes(),
 					}, nil
 				}
-				return nil, fmt.Errorf("unexpected EOF at position %d", startPos)
+				return nil, io.EOF // End of stream, no more data to read
 			}
 			return nil, fmt.Errorf("failed to peek byte at position %d: %w", startPos, err)
 		}
-		if _, ok := p.cst.findChild(peeked[0]); ok {
+		// if it's a command
+		if _, nextIsCommand := p.cst.findChild(peeked[0]); !nextIsCommand {
+			// If the first byte is not a command prefix, accumulate it as raw data
+			b, err := p.readByte()
+			if err != nil {
+				return nil, fmt.Errorf("failed to read byte at position %d: %w", startPos, err)
+			}
+			if err := accum.WriteByte(b); err != nil {
+				return nil, fmt.Errorf("failed to write byte %02X at position %d: %w", peeked[0], startPos, err)
+			}
+			continue // Continue accumulating bytes
+		}
+		// next is a command.
+		if accum.Len() > 0 {
+			// If we have accumulated bytes, return them as a raw entry
 			return &Entry{
 				Offset: startPos,
 				Data:   accum.Bytes(),
 			}, nil // Return accumulated bytes as a raw command
 		}
-
-		b, err := p.readByte()
+		cs, found, err := findComSpec(p.cst, p)
 		if err != nil {
 			return nil, err
 		}
-		if err := accum.WriteByte(b); err != nil {
-			return nil, fmt.Errorf("failed to write byte %02X at position %d: %w", peeked, startPos, err)
+		if !found {
+			// pretty much impossible at this point
+			return nil, fmt.Errorf("no command spec found at position %d", startPos)
 		}
+		cmd, err := p.readCommand(cs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read entry %s at position %d: %w", cs.Name, startPos, err)
+		}
+		cmd.Offset = startPos
+		return cmd, nil
 	}
 
 }

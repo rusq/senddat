@@ -10,5 +10,5 @@ ESC "!" 0
 "Normal font test" LF
 ESC "-" 1
 "Underline mode" LF
-ESC "-" 0 "No underline LF"
+ESC "-" 0 "No underline" LF
 
