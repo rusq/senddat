@@ -1,6 +1,5 @@
 "*** font weight test ****" LF
 ESC "E" 1 "Emphasized mode"  ESC "E" 0 LF
-ESC "4" "Italic" ESC "5" " off" LF
 ESC "-" 1 "Underline" ESC "-" 0 " off" LF
 "*** font height and width ***" LF
 GS "!" 0x11 "Double H + W" LF
