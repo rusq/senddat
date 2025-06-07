@@ -167,15 +167,28 @@ TEST_ESC_STAR = """<div xmlns="" class="Header2">
                               </div>   
                               """
 
+
 class TestCommandFormat(unittest.TestCase):
-    
+
     def test_parse(self):
-        from escpos import CommandFormat
+        from escpos import CommandFormat, CommandNotation
         from bs4 import BeautifulSoup
 
         doc = BeautifulSoup(TEST_ESC_STAR, features="html.parser")
         cmd = CommandFormat.parse(doc)
 
-        self.assertEqual(cmd.ascii, (['ESC', '*'], ['m', 'nL', 'nH', 'd1 ... dk']))
-        self.assertEqual(cmd.hex, (['1B', '2A'], ['m', 'nL', 'nH', 'd1 ... dk']))
-        self.assertEqual(cmd.decimal, (['27', '42'], ['m', 'nL', 'nH', 'd1 ... dk']))
+        self.assertEqual(cmd.ascii, CommandNotation(
+            prefix=['ESC', '*'],
+            arguments=['m', 'nL', 'nH'],
+            payload=['d1 ... dk']
+        ))
+        self.assertEqual(cmd.hex, CommandNotation(
+            prefix=['1B', '2A'],
+            arguments=['m', 'nL', 'nH'],
+            payload=['d1 ... dk']
+        ))
+        self.assertEqual(cmd.decimal, CommandNotation(
+            prefix=['27', '42'],
+            arguments=['m', 'nL', 'nH'],
+            payload=['d1 ... dk']
+        ))
