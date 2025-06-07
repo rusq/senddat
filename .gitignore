@@ -9,3 +9,4 @@ ref/
 /*.prn
 *.7z
 senddat
+.venv
