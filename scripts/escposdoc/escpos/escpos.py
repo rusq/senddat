@@ -57,7 +57,8 @@ def _get_file(url: str, dest: str) -> str:
 
 def _load_or_fetch_file(url: str, dest: str):
     """Load a file from the cache or fetch it from the URL if it doesn't exist."""
-    if os.path.exists(dest):
+    if os.path.exists(dest) and os.path.getsize(dest) > 0:
+        logger.debug(f"Loading cached file: {dest}")
         with open(dest, "rt") as r:
             return r.read()
     return _get_file(url, dest)
@@ -121,6 +122,7 @@ def version() -> str:
         raise ValueError("Version is empty")
     return version
 
+
 @dataclass
 class CommandNotation:
     prefix: list[str]
@@ -131,7 +133,6 @@ class CommandNotation:
     def __str__(self) -> str:
         return f"Prefix: {self.prefix}, Arguments: {self.arguments}, Payload: {self.payload}, Parameters: {self.parameters}"
 
-    
 
 @dataclass
 class CommandFormat:
@@ -162,21 +163,24 @@ class CommandFormat:
             CommandNotation([], [], [], False),  # Hex
             CommandNotation([], [], [], False),  # Decimal
         ]
-        for i, row in enumerate(rows):
+        for i, _ in enumerate(rows):
             for col in rows[i].find_all("td")[1:]:
                 # parameters will have a special font class: <div><font class="parameter">m</font></div>
                 if col.text.strip() == "":
                     continue
                 if text := col.text.strip():
-                    if col.find("font", class_="parameter"):
-                        if text == "[parameters]":
-                            row_map[i].parameters = True
-                        elif "..." in text:
-                            row_map[i].payload.append(text)
+                    try:
+                        if col.find("font", class_="parameter"):
+                            if text == "[parameters]":
+                                row_map[i].parameters = True
+                            elif "..." in text:
+                                row_map[i].payload.append(text)
+                            else:
+                                row_map[i].arguments.append(text)
                         else:
-                            row_map[i].arguments.append(text)
-                    else:
-                        row_map[i].prefix.append(text)
+                            row_map[i].prefix.append(text)
+                    except IndexError as e:
+                        raise ValueError(f"Error parsing column {col} on row {i}: {e}")
         return cls(ascii=row_map[0], hex=row_map[1], decimal=row_map[2])
 
 
@@ -191,14 +195,24 @@ class Command:
         title = doc.find("h1", class_="Head-B").text.strip()
         name = doc.select_one(
             "#body-contents > div > div:nth-child(3) > div > div > div").text.strip()
-        format = CommandFormat.parse(doc)
+        try:
+            format = CommandFormat.parse(doc)
+        except ValueError as e:
+            logger.error(f"Error parsing command format for {title}: {e}, skipping.")
+            format = None
+            # raise e
         return cls(title=title, name=name, format=format)
 
 
-def parse_command(filename: str) -> Command:
+def parse_url_loc(filename: str) -> Command:
     html = open_doc(filename)
     doc = BeautifulSoup(html, features="html.parser")
     if not doc:
         raise ValueError(f"Unable to parse the document {filename}")
 
-    return Command.parse(doc)
+    try:
+        cmd = Command.parse(doc)
+    except Exception as e:
+        logger.error(f"Error parsing command from {filename}: {e}")
+        raise
+    return cmd
