@@ -33,7 +33,9 @@ type CommandSpec struct {
 	Name     string
 	ArgCount int
 	ArgNames []string
-	Ignore   bool // If true, the command is ignored in the CSV file, and not parsed until next command.
+	// Ignore indicates that this command should be ignored during processing.
+	// Possibly, read to the next known command.
+	Ignore bool
 	// Caveat: This organisation supports only a payload that can be expressed
 	// with the formula.  It would fail on commands, that have variable payload,
 	// such as payload that terminates with a NUL, or a payload that instructs

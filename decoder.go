@@ -44,9 +44,10 @@ func Decode(r io.Reader, spec []CommandSpec) ([]Entry, error) {
 	}
 
 	var commands []Entry
+	var ignore bool
 LOOP:
 	for {
-		cmd, err := p.Next()
+		cmd, err := p.Next(ignore)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break LOOP // End of stream
@@ -55,6 +56,15 @@ LOOP:
 		}
 		if cmd == nil {
 			continue // Skip nil commands
+		}
+		ignore = false // Reset ignore flag for the next command
+		if cmd.IsCommand() && cmd.Spec.Ignore {
+			// to ignore false positives in the payload following the ignored command,
+			// we set the ignore flag for unknown commands.
+			// TODO: test this.
+			ignore = true
+			slog.Debug("ignoring command", "offset", cmd.Offset, "name", cmd.Name())
+			continue // Skip this command
 		}
 		commands = append(commands, *cmd)
 		slog.Debug("command", "offset", cmd.Offset, "name", cmd.Name(), "args", cmd.Args)
@@ -78,6 +88,10 @@ type Entry struct {
 	// Payload is the optional payload data for commands that have it, like:
 	// ESC * m nL nH data
 	Payload []byte
+}
+
+func (c Entry) IsCommand() bool {
+	return c.Spec != nil && len(c.Data) == 0
 }
 
 func (c Entry) IsRaw() bool {
@@ -178,7 +192,11 @@ func (p *Interpreter) ReadByte() (byte, error) {
 	return p.readByte()
 }
 
-func (p *Interpreter) Next() (*Entry, error) {
+// Next reads the next command or raw data entry from the input stream.
+// It returns an Entry containing the command specification, arguments, and
+// payload if applicable, or raw data if no command is recognized.
+// If ignoreUnknown is true, it will skip unknown commands and continue reading.
+func (p *Interpreter) Next(ignoreUnknown bool) (*Entry, error) {
 	startPos := p.pos
 	var accum bytes.Buffer
 	for {
@@ -217,11 +235,21 @@ func (p *Interpreter) Next() (*Entry, error) {
 				Data:   accum.Bytes(),
 			}, nil // Return accumulated bytes as a raw command
 		}
-		cs, found, err := findComSpec(p.cst, p)
+		cs, _, err := findComSpec(p.cst, p)
 		if err != nil {
+			if errors.Is(err, errUnhandled) && ignoreUnknown {
+				// If we encounter an unhandled command and ignoring unknown commands,
+				// we can skip it and continue reading.
+				slog.Debug("unhandled command", "offset", startPos, "byte", peeked[0])
+				// Unread the byte so we can read the next command
+				if err := p.UnreadByte(); err != nil {
+					return nil, fmt.Errorf("failed to unread byte at position %d: %w", startPos, err)
+				}
+				continue // Skip this command and continue reading
+			}
 			return nil, err
 		}
-		if !found {
+		if cs == nil {
 			// pretty much impossible at this point
 			return nil, fmt.Errorf("no command spec found at position %d", startPos)
 		}
@@ -232,7 +260,6 @@ func (p *Interpreter) Next() (*Entry, error) {
 		cmd.Offset = startPos
 		return cmd, nil
 	}
-
 }
 
 func (p *Interpreter) readCommand(cs *CommandSpec) (*Entry, error) {
@@ -289,15 +316,17 @@ var errUnhandled = errors.New("unhandled command")
 
 // findComSpec traverses the trie to find a command specification based on the
 // bytes read from the provided ByteScanner. It returns the CommandSpec if found,
-// a boolean indicating if a spec was found, and an error if any occurred during
-// reading.
-func findComSpec(n *trieNode, r io.ByteScanner) (*CommandSpec, bool, error) {
+// an integer indicating number of bytes read from reader , and an error if any
+// occurred during reading.
+func findComSpec(n *trieNode, r io.ByteScanner) (*CommandSpec, int, error) {
 	current := n
+	read := 0 // Number of bytes read from the reader
 	for depth := 0; ; depth++ {
 		b, err := r.ReadByte()
 		if err != nil {
-			return nil, false, err // Error reading byte
+			return nil, read, err // Error reading byte
 		}
+		read++ // Increment the read count
 
 		if nextNode, exists := current.children[b]; exists {
 			current = nextNode
@@ -307,16 +336,17 @@ func findComSpec(n *trieNode, r io.ByteScanner) (*CommandSpec, bool, error) {
 			// depth+1 does not exist.
 			// TODO: validate once the full spec is compiled.
 			if current.spec != nil {
-				return current.spec, true, nil // Found a command spec
+				return current.spec, read, nil // Found a command spec
 			}
 		} else {
 			if depth > 0 {
-				return nil, false, fmt.Errorf("%w: %x (\"%c\")", errUnhandled, b, b) // Unhandled command prefix
+				return nil, read, fmt.Errorf("%w: %x (\"%c\")", errUnhandled, b, b) // Unhandled command prefix
 			}
 			if err := r.UnreadByte(); err != nil {
-				return nil, false, err // Error unread byte
+				return nil, read, err // Error unread byte
 			}
-			return nil, false, nil // No matching command found
+			read--                // Decrement the read count since we unread the byte
+			return nil, read, nil // No matching command found
 		}
 	}
 }

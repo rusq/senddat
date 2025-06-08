@@ -14,7 +14,7 @@ var genericComspecs []CommandSpec
 
 func init() {
 	var err error
-	genericComspecs, err = loadCommandSpecs("drivers/generic.csv")
+	genericComspecs, err = loadCommandSpecs("drivers/escpos-3.40.csv")
 	if err != nil {
 		panic(err)
 	}
@@ -62,7 +62,7 @@ func Test_findComSpec(t *testing.T) {
 		name    string
 		args    args
 		want    *CommandSpec
-		want1   bool
+		want1   int
 		wantErr bool
 	}{
 		{
@@ -72,7 +72,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{byte(bHT)}),
 			},
 			want:    &sampleTrieComspecs[5],
-			want1:   true,
+			want1:   1,
 			wantErr: false,
 		},
 		{
@@ -82,7 +82,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{byte(bLF)}),
 			},
 			want:    &sampleTrieComspecs[6],
-			want1:   true,
+			want1:   1,
 			wantErr: false,
 		},
 		{
@@ -92,7 +92,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{0x1B, 0x40}),
 			},
 			want:    &sampleTrieComspecs[0],
-			want1:   true,
+			want1:   2,
 			wantErr: false,
 		},
 		{
@@ -102,7 +102,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{0x1B, 'o'}),
 			},
 			want:    nil,
-			want1:   false,
+			want1:   2,
 			wantErr: true,
 		},
 		{
@@ -112,7 +112,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{0x1B, 0x69}),
 			},
 			want:    &sampleTrieComspecs[1],
-			want1:   true,
+			want1:   2,
 			wantErr: false,
 		},
 		{
@@ -122,7 +122,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{0x1B}),
 			},
 			want:    nil,
-			want1:   false,
+			want1:   1,
 			wantErr: true,
 		},
 		{
@@ -132,7 +132,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{0x1B, '(', 'A'}),
 			},
 			want:    &sampleTrieComspecs[2],
-			want1:   true,
+			want1:   3,
 			wantErr: false,
 		},
 		{
@@ -142,7 +142,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{byte(bGS), '(', 'k'}),
 			},
 			want:    &sampleTrieComspecs[3],
-			want1:   true,
+			want1:   3,
 			wantErr: false,
 		},
 		{
@@ -152,7 +152,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{0x1B, '(', 'Y'}),
 			},
 			want:    &sampleTrieComspecs[7],
-			want1:   true,
+			want1:   3,
 			wantErr: false,
 		},
 		{
@@ -162,7 +162,7 @@ func Test_findComSpec(t *testing.T) {
 				r:     bytes.NewReader([]byte{'A'}),
 			},
 			want:    nil,
-			want1:   false,
+			want1:   0,
 			wantErr: false,
 		},
 	}
