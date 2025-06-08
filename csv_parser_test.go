@@ -217,7 +217,7 @@ GS ""(k"",48,69,PDF417: Set the error correction level,m n
 func Test_readSubcommands(t *testing.T) {
 	type args struct {
 		f       io.Reader
-		parseFn parseFunc
+		parseFn ParseFunc
 	}
 	tests := []struct {
 		name    string

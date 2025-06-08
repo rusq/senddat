@@ -15,24 +15,31 @@ import (
 	"strings"
 )
 
-//go:embed drivers/escpos-3.40.csv
+//go:embed drivers/xprinter.csv
 var genericcsv []byte
 
 var GenericCommandSpecs []CommandSpec
 
 func init() {
 	var err error
-	GenericCommandSpecs, err = readCommandSpecs(bytes.NewReader(genericcsv), defParseFn)
+	GenericCommandSpecs, err = readCommandSpecs(bytes.NewReader(genericcsv), ParseFn)
 	if err != nil {
 		panic(fmt.Sprintf("failed to load generic command specs: %v", err))
 	}
 }
 
 type CommandSpec struct {
-	Prefix      []byte
-	Name        string
-	ArgCount    int
-	ArgNames    []string
+	Prefix   []byte
+	Name     string
+	ArgCount int
+	ArgNames []string
+	Ignore   bool // If true, the command is ignored in the CSV file, and not parsed until next command.
+	// Caveat: This organisation supports only a payload that can be expressed
+	// with the formula.  It would fail on commands, that have variable payload,
+	// such as payload that terminates with a NUL, or a payload that instructs
+	// to read a number of bytes from the input stream, such as character
+	// redefinition.
+	// TODO: ingore flag in CSV to ignore certain commands.
 	payloadFn   func(args []byte) (int, error)
 	subcommands map[string]string // key: hex string of subcommand bytes
 }
@@ -84,13 +91,13 @@ func LoadCommandSpecsWithSubcommands(cmdCSV, subCSV string) ([]CommandSpec, erro
 	return cmds, nil
 }
 
-type parseFunc func(s string) ([]byte, error)
+type ParseFunc func(s string) ([]byte, error)
 
-// defParseFn is the default parsing function for commands.  There are two
+// ParseFn is the default parsing function for commands.  There are two
 // currently to choose from:
 //  1. ParseString - parses expressions like `ESC "@"'
 //  2. parseHexBytes - parses hex bytes, i.e. `1B 40'
-var defParseFn parseFunc = ParseString
+var ParseFn ParseFunc = ParseString
 
 func loadCommandSpecs(csvPath string) ([]CommandSpec, error) {
 	f, err := os.Open(csvPath)
@@ -101,7 +108,7 @@ func loadCommandSpecs(csvPath string) ([]CommandSpec, error) {
 	return readCommandSpecs(f, ParseString)
 }
 
-func readCommandSpecs(r io.Reader, parseFn parseFunc) ([]CommandSpec, error) {
+func readCommandSpecs(r io.Reader, parseFn ParseFunc) ([]CommandSpec, error) {
 	cr := csv.NewReader(r)
 	cr.TrimLeadingSpace = true
 	header, err := cr.Read()
@@ -134,6 +141,15 @@ func readCommandSpecs(r io.Reader, parseFn parseFunc) ([]CommandSpec, error) {
 			argNames = []string{}
 		}
 
+		ignore := false
+		sIgnore, ok := rowMap["ignore"]
+		if ok && sIgnore != "" {
+			ignore, err = strconv.ParseBool(sIgnore)
+			if err != nil {
+				return nil, fmt.Errorf("invalid ignore value %q: %v", sIgnore, err)
+			}
+		}
+
 		payloadFn, err := makePayloadFn(rowMap["payload_formula"], argNames)
 		if err != nil {
 			return nil, fmt.Errorf("payload fn for %x: %v", prefix, err)
@@ -142,6 +158,7 @@ func readCommandSpecs(r io.Reader, parseFn parseFunc) ([]CommandSpec, error) {
 		specs = append(specs, CommandSpec{
 			Prefix:    prefix,
 			Name:      rowMap["name"],
+			Ignore:    ignore,
 			ArgCount:  len(argNames),
 			ArgNames:  argNames,
 			payloadFn: payloadFn,
@@ -158,7 +175,7 @@ func loadSubcommands(csvPath string) (map[string]map[string]string, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return readSubcommands(f, defParseFn)
+	return readSubcommands(f, ParseFn)
 }
 
 type SubCommands map[string]Subcommand
@@ -170,7 +187,7 @@ type Subcommand struct {
 	Argcount string
 }
 
-func readSubcommands(f io.Reader, parseFn parseFunc) (map[string]map[string]string, error) {
+func readSubcommands(f io.Reader, parseFn ParseFunc) (map[string]map[string]string, error) {
 	r := csv.NewReader(f)
 	r.TrimLeadingSpace = true
 	header, err := r.Read()
@@ -221,7 +238,10 @@ func hexKey(b []byte) string {
 	return strings.Join(s, " ")
 }
 
-func parseHexBytes(s string) ([]byte, error) {
+// ParseHexBytes is an alternative parser for command prefixes, which expects a
+// string of hex bytes separated by spaces, e.g. "1B 40" for ESC @.
+// TODO: wire it to CLI flags.
+func ParseHexBytes(s string) ([]byte, error) {
 	parts := strings.Fields(s)
 	result := make([]byte, len(parts))
 	for i, p := range parts {
@@ -259,32 +279,6 @@ func makePayloadFn(exprStr string, argNames []string) (func([]byte) (int, error)
 	}, nil
 }
 
-func extractIdentifiersFromExpr(expr string) ([]string, error) {
-	node, err := parser.ParseExpr(expr)
-	if err != nil {
-		return nil, err
-	}
-	return extractIdentifiers(node)
-}
-
-// extractIdentifiers extracts identifiers names from the expression.
-func extractIdentifiers(node ast.Expr) ([]string, error) {
-	seen := map[string]bool{}
-	var names []string
-
-	ast.Inspect(node, func(n ast.Node) bool {
-		if ident, ok := n.(*ast.Ident); ok {
-			if !seen[ident.Name] {
-				// You might want to skip "true", "false", etc., if using booleans
-				names = append(names, ident.Name)
-				seen[ident.Name] = true
-			}
-		}
-		return true
-	})
-	return names, nil
-}
-
 func evalExpr(node ast.Expr, vars map[string]int) (int, error) {
 	switch e := node.(type) {
 	case *ast.BinaryExpr:
@@ -305,7 +299,7 @@ func evalExpr(node ast.Expr, vars map[string]int) (int, error) {
 			return left - right, nil
 		case token.QUO:
 			if right == 0 {
-				return 0, fmt.Errorf("division by zero")
+				return 0, errors.New("division by zero")
 			}
 			return left / right, nil
 		default:
@@ -321,6 +315,9 @@ func evalExpr(node ast.Expr, vars map[string]int) (int, error) {
 
 	case *ast.BasicLit:
 		return strconv.Atoi(e.Value)
+
+	case *ast.ParenExpr:
+		return evalExpr(e.X, vars)
 
 	default:
 		return 0, fmt.Errorf("unsupported expression: %T", e)

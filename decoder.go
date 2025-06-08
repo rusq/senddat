@@ -128,22 +128,22 @@ func (c Entry) String() string {
 
 }
 
-type Parser struct {
+type Interpreter struct {
 	r     *bufio.Reader
 	cst   *trieNode // Trie for command specs
 	pos   int       // Running byte offset in the stream
 	limit int       // Optional read limit (0 = no limit)
 }
 
-func NewParser(r io.Reader, spec []CommandSpec) (*Parser, error) {
-	return &Parser{
+func NewParser(r io.Reader, spec []CommandSpec) (*Interpreter, error) {
+	return &Interpreter{
 		r:   bufio.NewReader(r),
 		cst: buildTrie(spec),
 	}, nil
 }
 
 // Helper: read exactly one byte
-func (p *Parser) readByte() (byte, error) {
+func (p *Interpreter) readByte() (byte, error) {
 	b, err := p.r.ReadByte()
 	if err == nil {
 		p.pos++
@@ -151,7 +151,7 @@ func (p *Parser) readByte() (byte, error) {
 	return b, err
 }
 
-func (p *Parser) readBytes(n int) ([]byte, error) {
+func (p *Interpreter) readBytes(n int) ([]byte, error) {
 	if n < 0 {
 		return nil, fmt.Errorf("invalid read length: %d", n)
 	} else if n == 0 {
@@ -166,7 +166,7 @@ func (p *Parser) readBytes(n int) ([]byte, error) {
 	return data, nil
 }
 
-func (p *Parser) UnreadByte() error {
+func (p *Interpreter) UnreadByte() error {
 	if err := p.r.UnreadByte(); err != nil {
 		return fmt.Errorf("failed to unread byte at position %d: %w", p.pos, err)
 	}
@@ -174,11 +174,11 @@ func (p *Parser) UnreadByte() error {
 	return nil
 }
 
-func (p *Parser) ReadByte() (byte, error) {
+func (p *Interpreter) ReadByte() (byte, error) {
 	return p.readByte()
 }
 
-func (p *Parser) Next() (*Entry, error) {
+func (p *Interpreter) Next() (*Entry, error) {
 	startPos := p.pos
 	var accum bytes.Buffer
 	for {
@@ -235,7 +235,7 @@ func (p *Parser) Next() (*Entry, error) {
 
 }
 
-func (p *Parser) readCommand(cs *CommandSpec) (*Entry, error) {
+func (p *Interpreter) readCommand(cs *CommandSpec) (*Entry, error) {
 	if cs.ArgCount == 0 {
 		return &Entry{
 			Spec: cs,
