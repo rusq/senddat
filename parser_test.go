@@ -19,13 +19,36 @@ const (
 //go:embed testdata/POS/*.dat testdata/POS/*.prn
 var testFS embed.FS
 
-func loadTestFile(t *testing.T, name string) []byte {
+//go:embed examples/POS/*.dat
+var exampleFS embed.FS
+
+func loadFile(t *testing.T, fs embed.FS, name string) []byte {
 	t.Helper()
-	data, err := testFS.ReadFile(name)
+	data, err := fs.ReadFile(name)
 	if err != nil {
-		t.Fatalf("Failed to read test file %s: %v", name, err)
+		t.Fatalf("Failed to read file %s: %v", name, err)
 	}
 	return data
+}
+
+func loadTestFile(t *testing.T, name string) []byte {
+	t.Helper()
+	return loadFile(t, testFS, name)
+}
+
+func loadExampleFile(t *testing.T, name string) []byte {
+	t.Helper()
+	return loadFile(t, exampleFS, name)
+}
+
+func toPRN(t *testing.T, fs embed.FS, name string) []byte {
+	t.Helper()
+	data := loadFile(t, fs, name)
+	var buf bytes.Buffer
+	if err := Parse(&buf, bytes.NewReader(data)); err != nil {
+		t.Fatalf("Failed to parse file %s: %v", name, err)
+	}
+	return buf.Bytes()
 }
 
 func TestParse(t *testing.T) {

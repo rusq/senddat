@@ -10,17 +10,25 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var genericComspecs []CommandSpec
+var (
+	genericComspecs, loadErr = loadCommandSpecs("drivers/escpos-3.40.csv")
+)
 
 func init() {
-	var err error
-	genericComspecs, err = loadCommandSpecs("drivers/escpos-3.40.csv")
-	if err != nil {
-		panic(err)
+	if loadErr != nil {
+		panic(loadErr)
 	}
 }
 
+var (
+	csLF        = genericComspecs[13]
+	csEmphasis  = genericComspecs[4]
+	csUnderline = genericComspecs[1]
+	csCharfont  = genericComspecs[10]
+)
+
 func TestDecode(t *testing.T) {
+
 	type args struct {
 		r        io.Reader
 		comspecs []CommandSpec
@@ -34,10 +42,36 @@ func TestDecode(t *testing.T) {
 		{
 			name: "testESC",
 			args: args{
-				r:        bytes.NewReader(loadTestFile(t, "testdata/POS/80x72.prn")),
+				r:        bytes.NewReader(toPRN(t, exampleFS, "examples/POS/weight.dat")),
 				comspecs: genericComspecs,
 			},
-			want:    []Entry{},
+			want: []Entry{
+				{Offset: 0, Data: []byte("*** font weight test ****")},
+				{Offset: 25, Spec: &csLF},
+				{Offset: 26, Spec: &csEmphasis, Args: []byte{1}},
+				{Offset: 29, Data: []byte("Emphasized mode")},
+				{Offset: 44, Spec: &csEmphasis, Args: []byte{0}},
+				{Offset: 47, Spec: &csLF},
+				{Offset: 48, Spec: &csUnderline, Args: []byte{1}},
+				{Offset: 51, Data: []byte("Underline")},
+				{Offset: 60, Spec: &csUnderline, Args: []byte{0}},
+				{Offset: 63, Data: []byte(" off")},
+				{Offset: 67, Spec: &csLF},
+				{Offset: 68, Data: []byte("*** font height and width ***")},
+				{Offset: 97, Spec: &csLF},
+				{Offset: 98, Spec: &csCharfont, Args: []byte{17}},
+				{Offset: 101, Data: []byte("Double H + W")},
+				{Offset: 113, Spec: &csLF},
+				{Offset: 114, Spec: &csCharfont, Args: []byte{16}},
+				{Offset: 117, Data: []byte("Double Width")},
+				{Offset: 129, Spec: &csLF},
+				{Offset: 130, Spec: &csCharfont, Args: []byte{1}},
+				{Offset: 133, Data: []byte("Double Height")},
+				{Offset: 146, Spec: &csLF},
+				{Offset: 147, Spec: &csCharfont, Args: []byte{0}},
+				{Offset: 150, Data: []byte("back to normal")},
+				{Offset: 164, Spec: &csLF},
+			},
 			wantErr: false,
 		},
 	}

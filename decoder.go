@@ -67,7 +67,7 @@ LOOP:
 			continue // Skip this command
 		}
 		commands = append(commands, *cmd)
-		slog.Debug("command", "offset", cmd.Offset, "name", cmd.Name(), "args", cmd.Args)
+		slog.Debug("command", "offset", cmd.Offset, "string", cmd.String())
 	}
 
 	return commands, nil
@@ -106,8 +106,19 @@ func (c Entry) Name() string {
 	if c.Spec != nil {
 		return c.Spec.Name
 	}
-	if len(c.Data) == 0 {
-		return fmt.Sprintf("Raw Bytes 0x%02X", c.Data[0])
+	switch {
+	case c.IsEmpty():
+		return "EMPTY COMMAND"
+	case c.IsRaw():
+		// If it's a raw command, we can return the first byte as a hex string
+		return fmt.Sprintf("Raw Bytes (len=%d)", len(c.Data))
+	case c.IsCommand():
+		// If it's a command, we can return the name from the spec
+		if c.Spec != nil {
+			return c.Spec.Name
+		}
+	default:
+		return fmt.Sprintf("UNKNOWN COMMAND (offset=%d)", c.Offset)
 	}
 	return "INVALID COMMAND"
 }
@@ -132,10 +143,13 @@ func (c Entry) String() string {
 	for name, value := range args {
 		argv = append(argv, fmt.Sprintf("%s=%d", name, value))
 	}
-	buf.WriteString(", args=")
-	buf.WriteString(fmt.Sprintf("%v", argv))
-	if len(c.Payload) > 0 {
-		buf.WriteString(fmt.Sprintf(", payload=%d bytes", len(c.Payload)))
+	if c.IsCommand() {
+		if c.Spec.ArgCount > 0 {
+			buf.WriteString(fmt.Sprintf(", args=%v", argv))
+		}
+		if len(c.Payload) > 0 {
+			buf.WriteString(fmt.Sprintf(", payload=%d bytes", len(c.Payload)))
+		}
 	}
 	buf.WriteString("]")
 	return buf.String()
