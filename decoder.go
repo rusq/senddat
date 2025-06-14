@@ -31,7 +31,7 @@ func (e *DecodeError) Unwrap() error {
 // error if decoding fails.
 func Decode(r io.Reader, spec []CommandSpec) ([]Entry, error) {
 	// Create a new parser instance
-	p, err := NewParser(r, spec)
+	p, err := NewInterpreter(r, spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create parser: %w", err)
 	}
@@ -90,65 +90,102 @@ type Entry struct {
 	Payload []byte
 }
 
-func (c Entry) IsCommand() bool {
-	return c.Spec != nil && len(c.Data) == 0
+func (e Entry) IsCommand() bool {
+	return e.Spec != nil && len(e.Data) == 0
 }
 
-func (c Entry) IsRaw() bool {
-	return c.Spec == nil && len(c.Data) > 0
+func (e Entry) IsData() bool {
+	return e.Spec == nil && len(e.Data) > 0
 }
 
-func (c Entry) IsEmpty() bool {
-	return c.Spec == nil && len(c.Data) == 0
+func (e Entry) IsEmpty() bool {
+	return e.Spec == nil && len(e.Data) == 0
 }
 
-func (c Entry) Name() string {
-	if c.Spec != nil {
-		return c.Spec.Name
+var (
+	ErrNoSpec              = errors.New("no command spec found")
+	ErrArgCountMismatch    = errors.New("argument count mismatch")
+	ErrPayloadSizeMismatch = errors.New("payload size mismatch")
+	ErrEmptyData           = errors.New("empty data entry")
+	ErrInvalidCommand      = errors.New("invalid command")
+)
+
+func (e Entry) Validate() error {
+	if e.IsCommand() {
+		if e.Spec == nil {
+			return ErrNoSpec // Invalid command without a spec
+		}
+		if e.Spec.ArgCount > 0 && len(e.Args) < e.Spec.ArgCount {
+			return ErrArgCountMismatch // Invalid command with insufficient arguments
+		}
+		if e.Spec.payloadFn != nil {
+			psz, err := e.Spec.payloadFn(e.Args)
+			if err != nil {
+				return err // Invalid command with error in payload function
+			}
+			if len(e.Payload) != psz {
+				return ErrPayloadSizeMismatch // Invalid command with incorrect payload size
+			}
+		}
+	}
+	// If it's a data entry, we just check if it has data
+	if e.IsData() && len(e.Data) == 0 {
+		return ErrEmptyData // Invalid data entry if it has no data
+	}
+	return ErrInvalidCommand // Invalid entry if it's neither a command nor data
+}
+
+func (e Entry) IsValid() bool {
+	return e.Validate() == nil
+}
+
+func (e Entry) Name() string {
+	if e.Spec != nil {
+		return e.Spec.Name
 	}
 	switch {
-	case c.IsEmpty():
-		return "EMPTY COMMAND"
-	case c.IsRaw():
+	case e.IsData():
 		// If it's a raw command, we can return the first byte as a hex string
-		return fmt.Sprintf("Raw Bytes (len=%d)", len(c.Data))
-	case c.IsCommand():
+		return fmt.Sprintf("Raw Bytes (len=%d)", len(e.Data))
+	case e.IsCommand():
 		// If it's a command, we can return the name from the spec
-		if c.Spec != nil {
-			return c.Spec.Name
+		if e.Spec != nil {
+			return e.Spec.Name
 		}
+	case e.IsEmpty():
+		return "EMPTY COMMAND"
 	default:
-		return fmt.Sprintf("UNKNOWN COMMAND (offset=%d)", c.Offset)
+		return fmt.Sprintf("UNKNOWN COMMAND (offset=%d)", e.Offset)
 	}
 	return "INVALID COMMAND"
 }
 
-func (c Entry) String() string {
-	if c.IsEmpty() {
-		return fmt.Sprintf("[@%6d: EMPTY]", c.Offset)
+func (e Entry) String() string {
+	if e.IsEmpty() {
+		return fmt.Sprintf("[@%6d: EMPTY]", e.Offset)
 	}
 	var buf bytes.Buffer
-	if c.IsRaw() {
-		return fmt.Sprintf("[@%6d: RAW,len=%d %q]", c.Offset, len(c.Data), c.Data)
+	if e.IsData() {
+		return fmt.Sprintf("[@%6d: RAW,len=%d %q]", e.Offset, len(e.Data), e.Data)
 	}
-	fmt.Fprintf(&buf, "[@%6d: %s", c.Offset, c.Name())
-	if len(c.Args) == 0 {
+	fmt.Fprintf(&buf, "[@%6d: %s", e.Offset, e.Name())
+	if len(e.Args) == 0 {
 		return buf.String() + "]"
 	}
-	args, err := c.Spec.ArgValues(c.Args)
+	args, err := e.Spec.ArgValues(e.Args)
 	if err != nil {
-		return fmt.Sprintf("[@%6d:ERROR %s]", c.Offset, err)
+		return fmt.Sprintf("[@%6d:ERROR %s]", e.Offset, err)
 	}
 	var argv []string
 	for name, value := range args {
 		argv = append(argv, fmt.Sprintf("%s=%d", name, value))
 	}
-	if c.IsCommand() {
-		if c.Spec.ArgCount > 0 {
+	if e.IsCommand() {
+		if e.Spec.ArgCount > 0 {
 			buf.WriteString(fmt.Sprintf(", args=%v", argv))
 		}
-		if len(c.Payload) > 0 {
-			buf.WriteString(fmt.Sprintf(", payload=%d bytes", len(c.Payload)))
+		if len(e.Payload) > 0 {
+			buf.WriteString(fmt.Sprintf(", payload=%d bytes", len(e.Payload)))
 		}
 	}
 	buf.WriteString("]")
@@ -163,14 +200,14 @@ type Interpreter struct {
 	limit int       // Optional read limit (0 = no limit)
 }
 
-func NewParser(r io.Reader, spec []CommandSpec) (*Interpreter, error) {
+func NewInterpreter(r io.Reader, spec []CommandSpec) (*Interpreter, error) {
 	return &Interpreter{
 		r:   bufio.NewReader(r),
 		cst: buildTrie(spec),
 	}, nil
 }
 
-// Helper: read exactly one byte
+// readByte reads exactly one byte
 func (p *Interpreter) readByte() (byte, error) {
 	b, err := p.r.ReadByte()
 	if err == nil {

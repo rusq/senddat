@@ -216,3 +216,185 @@ func Test_findComSpec(t *testing.T) {
 		})
 	}
 }
+
+func TestEntry_IsCommand(t *testing.T) {
+	type fields struct {
+		Offset  int
+		Spec    *CommandSpec
+		Data    []byte
+		Args    []byte
+		Payload []byte
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{
+			name: "is command",
+			fields: fields{
+				Offset: 0,
+				Spec:   &CommandSpec{Name: "TestCommand"},
+			},
+			want: true,
+		},
+		{
+			name: "is not command",
+			fields: fields{
+				Offset: 0,
+				Spec:   nil,
+				Data:   []byte("Some data"),
+				Args:   []byte{1, 2, 3},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Entry{
+				Offset:  tt.fields.Offset,
+				Spec:    tt.fields.Spec,
+				Data:    tt.fields.Data,
+				Args:    tt.fields.Args,
+				Payload: tt.fields.Payload,
+			}
+			if got := c.IsCommand(); got != tt.want {
+				t.Errorf("Entry.IsCommand() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEntry_IsData(t *testing.T) {
+	type fields struct {
+		Offset  int
+		Spec    *CommandSpec
+		Data    []byte
+		Args    []byte
+		Payload []byte
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{
+			name: "Is data",
+			fields: fields{
+				Offset: 0,
+				Spec:   nil,
+				Data:   []byte("This is data"),
+			},
+			want: true,
+		},
+		{
+			name: "Is not data",
+			fields: fields{
+				Offset: 0,
+				Spec:   &CommandSpec{Prefix: []byte{0x1B, 0x40}}, // ESC @ command
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Entry{
+				Offset:  tt.fields.Offset,
+				Spec:    tt.fields.Spec,
+				Data:    tt.fields.Data,
+				Args:    tt.fields.Args,
+				Payload: tt.fields.Payload,
+			}
+			if got := c.IsData(); got != tt.want {
+				t.Errorf("Entry.IsData() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEntry_IsEmpty(t *testing.T) {
+	type fields struct {
+		Offset  int
+		Spec    *CommandSpec
+		Data    []byte
+		Args    []byte
+		Payload []byte
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{
+			name: "Is empty",
+			fields: fields{
+				Spec: nil,
+				Data: nil,
+			},
+			want: true,
+		},
+		{
+			name: "command",
+			fields: fields{
+				Offset: 0,
+				Spec:   &CommandSpec{Name: "TestCommand"},
+				Data:   nil,
+			},
+			want: false,
+		},
+		{
+			name: "data",
+			fields: fields{
+				Offset: 0,
+				Spec:   nil,
+				Data:   []byte("Some data"),
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Entry{
+				Offset:  tt.fields.Offset,
+				Spec:    tt.fields.Spec,
+				Data:    tt.fields.Data,
+				Args:    tt.fields.Args,
+				Payload: tt.fields.Payload,
+			}
+			if got := c.IsEmpty(); got != tt.want {
+				t.Errorf("Entry.IsEmpty() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEntry_IsValid(t *testing.T) {
+	type fields struct {
+		Offset  int
+		Spec    *CommandSpec
+		Data    []byte
+		Args    []byte
+		Payload []byte
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Entry{
+				Offset:  tt.fields.Offset,
+				Spec:    tt.fields.Spec,
+				Data:    tt.fields.Data,
+				Args:    tt.fields.Args,
+				Payload: tt.fields.Payload,
+			}
+			if got := c.IsValid(); got != tt.want {
+				t.Errorf("Entry.IsValid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
