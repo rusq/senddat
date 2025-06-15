@@ -8,47 +8,55 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
-	_ = x[bESC-27]
-	_ = x[bGS-29]
-	_ = x[bFS-28]
-	_ = x[bCR-13]
-	_ = x[bLF-10]
-	_ = x[bFF-12]
+	_ = x[bEOT-4]
 	_ = x[bBS-8]
 	_ = x[bHT-9]
+	_ = x[bLF-10]
+	_ = x[bFF-12]
+	_ = x[bCR-13]
 	_ = x[bDLE-16]
 	_ = x[bCAN-24]
+	_ = x[bESC-27]
+	_ = x[bFS-28]
+	_ = x[bGS-29]
+	_ = x[bSP-32]
 }
 
 const (
-	_ControlCode_name_0 = "BSHTLF"
-	_ControlCode_name_1 = "FFCR"
-	_ControlCode_name_2 = "DLE"
-	_ControlCode_name_3 = "CAN"
-	_ControlCode_name_4 = "ESCFSGS"
+	_ControlCode_name_0 = "EOT"
+	_ControlCode_name_1 = "BSHTLF"
+	_ControlCode_name_2 = "FFCR"
+	_ControlCode_name_3 = "DLE"
+	_ControlCode_name_4 = "CAN"
+	_ControlCode_name_5 = "ESCFSGS"
+	_ControlCode_name_6 = "SP"
 )
 
 var (
-	_ControlCode_index_0 = [...]uint8{0, 2, 4, 6}
-	_ControlCode_index_1 = [...]uint8{0, 2, 4}
-	_ControlCode_index_4 = [...]uint8{0, 3, 5, 7}
+	_ControlCode_index_1 = [...]uint8{0, 2, 4, 6}
+	_ControlCode_index_2 = [...]uint8{0, 2, 4}
+	_ControlCode_index_5 = [...]uint8{0, 3, 5, 7}
 )
 
 func (i ControlCode) String() string {
 	switch {
+	case i == 4:
+		return _ControlCode_name_0
 	case 8 <= i && i <= 10:
 		i -= 8
-		return _ControlCode_name_0[_ControlCode_index_0[i]:_ControlCode_index_0[i+1]]
+		return _ControlCode_name_1[_ControlCode_index_1[i]:_ControlCode_index_1[i+1]]
 	case 12 <= i && i <= 13:
 		i -= 12
-		return _ControlCode_name_1[_ControlCode_index_1[i]:_ControlCode_index_1[i+1]]
+		return _ControlCode_name_2[_ControlCode_index_2[i]:_ControlCode_index_2[i+1]]
 	case i == 16:
-		return _ControlCode_name_2
-	case i == 24:
 		return _ControlCode_name_3
+	case i == 24:
+		return _ControlCode_name_4
 	case 27 <= i && i <= 29:
 		i -= 27
-		return _ControlCode_name_4[_ControlCode_index_4[i]:_ControlCode_index_4[i+1]]
+		return _ControlCode_name_5[_ControlCode_index_5[i]:_ControlCode_index_5[i+1]]
+	case i == 32:
+		return _ControlCode_name_6
 	default:
 		return "ControlCode(" + strconv.FormatInt(int64(i), 10) + ")"
 	}

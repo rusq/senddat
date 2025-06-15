@@ -16,6 +16,7 @@ var params = struct {
 	output     string
 	isTemplate bool
 	verbose    bool
+	reverse    bool
 }{
 	output: "",
 	input:  "",
@@ -26,6 +27,7 @@ func init() {
 	flag.BoolVar(&params.isTemplate, "t", false, "treat input as a Go template")
 	flag.StringVar(&params.output, "o", "", "output file (default stdout)")
 	flag.BoolVar(&params.verbose, "v", os.Getenv("DEBUG") == "1", "enable verbose logging")
+	flag.BoolVar(&params.reverse, "r", false, "reverse the PRN file")
 }
 
 func main() {
@@ -46,41 +48,61 @@ func main() {
 		parseFn = senddat.ParseFromTemplate
 	}
 
-	if err := run(ctx, params.input, params.output, parseFn); err != nil {
+	var err error
+	if params.reverse {
+		err = reverse(ctx, params.input, params.output)
+	} else {
+		err = parse(ctx, params.input, params.output, parseFn)
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, input string, output string, parseFn func(w io.Writer, r io.Reader) error) error {
-	var r io.Reader
-	if input == "" || input == "-" {
-		r = os.Stdin
-	} else {
-		file, err := os.Open(input)
-		if err != nil {
-			return fmt.Errorf("failed to open input file: %w", err)
-		}
-		defer file.Close()
-		r = file
+func parse(_ context.Context, input string, output string, parseFn func(w io.Writer, r io.Reader) error) error {
+	r, w, err := openFiles(input, output)
+	if err != nil {
+		return fmt.Errorf("failed to open files: %w", err)
 	}
-
-	var w io.Writer
-	if output == "" || output == "-" {
-		w = os.Stdout
-	} else {
-		file, err := os.Create(output)
-		if err != nil {
-			return fmt.Errorf("failed to create output file: %w", err)
-		}
-		defer file.Close()
-		w = file
-	}
+	defer r.Close()
+	defer w.Close()
 
 	if err := parseFn(w, r); err != nil {
 		return fmt.Errorf("failed to parse input: %w", err)
 	}
 	slog.Info("Data sent successfully", "output", output, "input", input)
+	return nil
+}
+
+func stringRenderFn(w io.Writer) func(senddat.Entry) error {
+	return func(entry senddat.Entry) error {
+		_, err := fmt.Fprintln(w, entry.String())
+		return err
+	}
+}
+
+func reverse(_ context.Context, input string, output string) error {
+	r, w, err := openFiles(input, output)
+	if err != nil {
+		return fmt.Errorf("failed to open files: %w", err)
+	}
+	defer r.Close()
+	defer w.Close()
+	renderFn := stringRenderFn(w)
+
+	entries, err := senddat.Decode(r, senddat.GenericCommandSpecs)
+	if err != nil {
+		return fmt.Errorf("failed to decode input: %w", err)
+	}
+
+	for _, entry := range entries {
+		if err := renderFn(entry); err != nil {
+			return fmt.Errorf("failed to render entry: %w", err)
+		}
+	}
+
+	slog.Info("Data reversed successfully", "output", output, "input", input)
 	return nil
 }
 
@@ -93,4 +115,29 @@ func usage() {
 	fmt.Fprintf(out, "Usage: %s [-o <output>] [input]\n\n", os.Args[0])
 	fmt.Fprintf(out, "Flags:\n")
 	flag.PrintDefaults()
+}
+
+func openFiles(input string, output string) (io.ReadCloser, io.WriteCloser, error) {
+	var r io.ReadCloser
+	if input == "" || input == "-" {
+		r = os.Stdin
+	} else {
+		file, err := os.Open(input)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open input file: %w", err)
+		}
+		r = file
+	}
+
+	var w io.WriteCloser
+	if output == "" || output == "-" {
+		w = os.Stdout
+	} else {
+		file, err := os.Create(output)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create output file: %w", err)
+		}
+		w = file
+	}
+	return r, w, nil
 }

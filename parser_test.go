@@ -3,8 +3,8 @@ package senddat
 import (
 	"bytes"
 	"embed"
-	_ "embed"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -19,13 +19,36 @@ const (
 //go:embed testdata/POS/*.dat testdata/POS/*.prn
 var testFS embed.FS
 
-func loadTestFile(t *testing.T, name string) []byte {
+//go:embed examples/POS/*.dat
+var exampleFS embed.FS
+
+func loadFile(t *testing.T, fs embed.FS, name string) []byte {
 	t.Helper()
-	data, err := testFS.ReadFile(name)
+	data, err := fs.ReadFile(name)
 	if err != nil {
-		t.Fatalf("Failed to read test file %s: %v", name, err)
+		t.Fatalf("Failed to read file %s: %v", name, err)
 	}
 	return data
+}
+
+func loadTestFile(t *testing.T, name string) []byte {
+	t.Helper()
+	return loadFile(t, testFS, name)
+}
+
+func loadExampleFile(t *testing.T, name string) []byte {
+	t.Helper()
+	return loadFile(t, exampleFS, name)
+}
+
+func toPRN(t *testing.T, fs embed.FS, name string) []byte {
+	t.Helper()
+	data := loadFile(t, fs, name)
+	var buf bytes.Buffer
+	if err := Parse(&buf, bytes.NewReader(data)); err != nil {
+		t.Fatalf("Failed to parse file %s: %v", name, err)
+	}
+	return buf.Bytes()
 }
 
 func TestParse(t *testing.T) {
@@ -177,6 +200,43 @@ func Test_atob(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("atob() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseString(t *testing.T) {
+	type args struct {
+		s string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    []byte
+		wantErr bool
+	}{
+		{
+			name:    "parses a string",
+			args:    args{`ESC "@"`},
+			want:    []byte{27, 64},
+			wantErr: false,
+		},
+		{
+			name:    "invalid",
+			args:    args{`blah`},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseString(tt.args.s)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ParseString() = %v, want %v", got, tt.want)
 			}
 		})
 	}

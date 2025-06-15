@@ -1,6 +1,7 @@
 package senddat
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
 	"io"
@@ -15,16 +16,18 @@ type ControlCode byte
 
 //go:generate stringer -type=ControlCode -trimprefix=b
 const (
-	bESC ControlCode = 0x1B // Escape character
-	bGS  ControlCode = 0x1D // Group Separator character
-	bFS  ControlCode = 0x1C // File Separator character
-	bCR  ControlCode = 0x0D // Carriage Return character
-	bLF  ControlCode = 0x0A // Line Feed character
-	bFF  ControlCode = 0x0C // Form Feed character
+	bEOT ControlCode = 0x04 // End of Transmission character
 	bBS  ControlCode = 0x08 // Backspace character
 	bHT  ControlCode = 0x09 // Horizontal Tab character
+	bLF  ControlCode = 0x0A // Line Feed character
+	bFF  ControlCode = 0x0C // Form Feed character
+	bCR  ControlCode = 0x0D // Carriage Return character
 	bDLE ControlCode = 0x10 // Data Link Escape character
 	bCAN ControlCode = 0x18 // Cancel character
+	bESC ControlCode = 0x1B // Escape character
+	bFS  ControlCode = 0x1C // File Separator character
+	bGS  ControlCode = 0x1D // Group Separator character
+	bSP  ControlCode = 0x20 // Space character
 )
 
 var tokenMap = map[string]ControlCode{
@@ -38,6 +41,8 @@ var tokenMap = map[string]ControlCode{
 	bDLE.String(): bDLE,
 	bCAN.String(): bCAN,
 	bBS.String():  bBS,
+	bEOT.String(): bEOT,
+	bSP.String():  bSP,
 }
 
 type errWriter struct {
@@ -70,7 +75,6 @@ func (ew *errWriter) Fprintf(format string, args ...any) {
 	}
 	ew.N += n
 }
-
 
 func Parse(w io.Writer, r io.Reader) error {
 	var s scanner.Scanner
@@ -144,4 +148,13 @@ func atob(t string) (byte, error) {
 		return 0, fmt.Errorf("scan error: %w", err)
 	}
 	return b, nil
+}
+
+// ParseString parses the string, like 'ESC "@"' and returns bytes.
+func ParseString(s string) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := Parse(&buf, strings.NewReader(s)); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

@@ -1,0 +1,16 @@
+prefix,name,arg_names,payload_formula
+"ESC ""!""","Select print mode(s)",n,
+"ESC ""-""","Turn underline mode on/off",n,
+"ESC ""@""","Initialize Printer",,
+"ESC ""*""","Bit Image Mode",m nL nH,"nL + 256 * nH"
+"ESC ""E""","Turn emphasized mode on/off",n,
+"ESC ""J""","Print and feed paper",n,
+"ESC ""M""","Select character font",n,
+"ESC ""U""","Enable Unidirectional Mode",n,
+"ESC ""a""","Set Justification",n,
+"ESC ""d""","Print and feed n lines",n,
+"GS ""!""","Select character size",n,
+"GS ""V""","Cut Paper",n,
+"GS ""(V""",Paper Cut,pL pH,pL+pH*256
+"LF","Line Feed",,
+"CR","Carriage Return",,

@@ -8,3 +8,5 @@ ref/
 /*.dat
 /*.prn
 *.7z
+senddat
+.venv
