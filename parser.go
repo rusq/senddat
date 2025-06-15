@@ -80,14 +80,15 @@ func Parse(w io.Writer, r io.Reader) error {
 	var s scanner.Scanner
 	var ew = errWriter{Writer: w}
 	s.Init(r)
-	s.Mode = scanner.ScanIdents | scanner.ScanStrings | scanner.ScanInts | scanner.ScanComments
+	s.Mode = scanner.ScanIdents | scanner.ScanStrings | scanner.ScanInts | scanner.ScanComments | scanner.ScanRawStrings
 	s.Error = func(s *scanner.Scanner, msg string) {
 		slog.Error("scanner", "error", msg, "line", s.Line, "pos", s.Pos())
 	}
 	for tok := s.Scan(); tok != scanner.EOF; tok = s.Scan() {
+		lg := slog.With("line", s.Line, "pos", s.Pos(), "value", s.TokenText())
 		switch tok {
 		case scanner.Ident:
-			slog.Debug("identifier", "text", s.TokenText(), "line", s.Line, "pos", s.Pos())
+			lg.Debug("identifier")
 			t := s.TokenText()
 			if code, ok := tokenMap[t]; ok {
 				ew.Write([]byte{byte(code)})
@@ -95,12 +96,16 @@ func Parse(w io.Writer, r io.Reader) error {
 				return fmt.Errorf("unknown identifier: %s at line %d, pos %v", s.TokenText(), s.Line, s.Pos())
 			}
 		case scanner.String:
-			slog.Debug("string", "value", s.TokenText(), "line", s.Line, "pos", s.Pos())
+			lg.Debug("string")
 			text := strings.Trim(s.TokenText(), `"`)
+			ew.Write([]byte(text))
+		case scanner.RawString:
+			lg.Debug("raw string")
+			text := strings.Trim(s.TokenText(), "`")
 			ew.Write([]byte(text))
 		case scanner.Int:
 			t := s.TokenText()
-			slog.Debug("integer", "value", t, "line", s.Line, "pos", s.Pos())
+			slog.Debug("integer")
 			// Convert integer to byte and write it
 			b, err := atob(t)
 			if err != nil {
