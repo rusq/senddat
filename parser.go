@@ -1,6 +1,7 @@
 package senddat
 
 import (
+	"bufio"
 	"bytes"
 	_ "embed"
 	"fmt"
@@ -77,15 +78,21 @@ func (ew *errWriter) Fprintf(format string, args ...any) {
 }
 
 func Parse(w io.Writer, r io.Reader) error {
+
+	var bw = bufio.NewWriter(w)
+	defer bw.Flush()
+
+	var ew = errWriter{Writer: bw}
+
 	var s scanner.Scanner
-	var ew = errWriter{Writer: w}
 	s.Init(r)
 	s.Mode = scanner.ScanIdents | scanner.ScanStrings | scanner.ScanInts | scanner.ScanComments | scanner.ScanRawStrings
 	s.Error = func(s *scanner.Scanner, msg string) {
 		slog.Error("scanner", "error", msg, "line", s.Line, "pos", s.Pos())
 	}
 	for tok := s.Scan(); tok != scanner.EOF; tok = s.Scan() {
-		lg := slog.With("line", s.Line, "pos", s.Pos(), "value", s.TokenText())
+		t := s.TokenText()
+		lg := slog.With("line", s.Line, "pos", s.Pos(), "value", t)
 		switch tok {
 		case scanner.Ident:
 			lg.Debug("identifier")
@@ -93,35 +100,33 @@ func Parse(w io.Writer, r io.Reader) error {
 			if code, ok := tokenMap[t]; ok {
 				ew.Write([]byte{byte(code)})
 			} else {
-				return fmt.Errorf("unknown identifier: %s at line %d, pos %v", s.TokenText(), s.Line, s.Pos())
+				return fmt.Errorf("unknown identifier: %s at line %d, pos %v", t, s.Line, s.Pos())
 			}
 		case scanner.String:
 			lg.Debug("string")
-			text := strings.Trim(s.TokenText(), `"`)
+			text := strings.Trim(t, `"`)
 			ew.Write([]byte(text))
 		case scanner.RawString:
 			lg.Debug("raw string")
-			text := strings.Trim(s.TokenText(), "`")
+			text := strings.Trim(t, "`")
 			ew.Write([]byte(text))
 		case scanner.Int:
-			t := s.TokenText()
-			slog.Debug("integer")
-			// Convert integer to byte and write it
+			lg.Debug("integer")
 			b, err := atob(t)
 			if err != nil {
 				return fmt.Errorf("invalid integer: %s at line %d, pos %v", t, s.Line, s.Pos())
 			}
 			ew.Write([]byte{b})
 		case scanner.Char:
-			slog.Info("char", "value", s.TokenText(), "line", s.Line, "pos", s.Pos())
+			lg.Info("char", "value", t, "line", s.Line, "pos", s.Pos())
 		case scanner.Comment:
-			slog.Debug("comment", "value", s.TokenText(), "line", s.Line, "pos", s.Pos())
-		case sdDelayMs, sdKeyInput, sdPrint, sdComment: // senddat delay
+			lg.Debug("comment", "value", t, "line", s.Line, "pos", s.Pos())
+		case sdDelayMs, sdKeyInput, sdPrint, sdComment: // senddat command
 			if err := senddatCommand(&s, tok); err != nil {
 				return err
 			}
 		default:
-			slog.Warn("unknown token", "code", tok, "token", scanner.TokenString(tok), "text", s.TokenText(), "line", s.Line, "pos", s.Pos())
+			lg.Warn("unknown token", "code", tok, "token", scanner.TokenString(tok))
 		}
 	}
 	if s.ErrorCount > 0 {
@@ -133,6 +138,7 @@ func Parse(w io.Writer, r io.Reader) error {
 	return nil
 }
 
+// atob is similar to atoi but returns an 8-bit unsigned integer.
 func atob(t string) (byte, error) {
 	var scanfmt = "%d"
 	if len(t) > 0 && t[0] == '0' && len(t) > 1 {
