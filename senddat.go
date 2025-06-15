@@ -14,10 +14,15 @@ import (
 
 // senddat commands
 const (
+	// standard senddat commands
 	sdDelayMs  = '*'
 	sdComment  = '\''
 	sdKeyInput = '.'
 	sdPrint    = '!'
+
+	// extended senddat commands
+	sdxInclude = '@' // include file
+	sdxImage   = '#' // include image file
 )
 
 // maxStrLen is the maximum string length for the readln
@@ -33,7 +38,7 @@ var (
 var errTooLong = errors.New("string length exceeded")
 
 // senddatCommand is a senddat command executor.
-func senddatCommand(s *scanner.Scanner, command rune) error {
+func senddatCommand(w io.Writer, s *scanner.Scanner, command rune) error {
 	switch command {
 	case sdComment:
 		slog.Debug("start of the comment line", "text", s.TokenText(), "line", s.Line, "pos", s.Pos())
@@ -63,6 +68,24 @@ func senddatCommand(s *scanner.Scanner, command rune) error {
 			return fmt.Errorf("error at position %v: %w", s.Pos(), err)
 		}
 		fmt.Fprintln(SenddatOutput, msg)
+	case sdxInclude:
+		filename, err := readln(s, maxStrLen)
+		if err != nil {
+			return fmt.Errorf("error reading include filename at position %v: %w", s.Pos(), err)
+		}
+		slog.Debug("include file", "filename", filename, "line", s.Line, "pos", s.Pos())
+		if n, err := copyfile(w, filename); err != nil {
+			return fmt.Errorf("error including file '%s' at line %d, pos %v: %w", filename, s.Line, s.Pos(), err)
+		} else {
+			slog.Info("included file", "filename", filename, "bytes", n, "line", s.Line, "pos", s.Pos())
+		}
+	case sdxImage:
+		slog.Warn("image inclusion is not supported yet", "line", s.Line, "pos", s.Pos())
+		// TODO establish a protocol for image inclusion, i.e. how to handle the image data.
+		_, err := readln(s, maxStrLen)
+		if err != nil {
+			return fmt.Errorf("error reading image filename at position %v: %w", s.Pos(), err)
+		}
 	default:
 		return fmt.Errorf("unhandled senddat command: '%c'", command)
 	}
@@ -87,4 +110,19 @@ func readln(s *scanner.Scanner, n int) (string, error) {
 		}
 	}
 	return buf.String(), errTooLong
+}
+
+// copyfile copies the contents of the file with the given filename to the writer w.
+// It returns the number of bytes copied and an error if any.
+func copyfile(w io.Writer, filename string) (int64, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return 0, fmt.Errorf("error opening file '%s': %w", filename, err)
+	}
+	defer f.Close()
+	n, err := io.Copy(w, f)
+	if err != nil {
+		return n, fmt.Errorf("error copying file '%s': %w", filename, err)
+	}
+	return n, nil
 }

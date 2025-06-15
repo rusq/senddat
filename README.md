@@ -20,9 +20,8 @@ In additional to the standard senddat functions, this version is extended to
 support the following:
 
 - Go templating language preprocessor (template files up to 1MB)
-- TODO: File inclusion via `@file.txt` directive
+- File inclusion via `@file.txt` directive
 - TODO: Bitmap data inclusion via `#image.png` (must be monochrome)
-- TODO: Binary data inclusion via `&file.bin`
 
 ### Templating
 Following functions are predefined:

@@ -121,8 +121,8 @@ func Parse(w io.Writer, r io.Reader) error {
 			lg.Info("char", "value", t, "line", s.Line, "pos", s.Pos())
 		case scanner.Comment:
 			lg.Debug("comment", "value", t, "line", s.Line, "pos", s.Pos())
-		case sdDelayMs, sdKeyInput, sdPrint, sdComment: // senddat command
-			if err := senddatCommand(&s, tok); err != nil {
+		case sdDelayMs, sdKeyInput, sdPrint, sdComment, sdxInclude, sdxImage: // senddat command
+			if err := senddatCommand(w, &s, tok); err != nil {
 				return err
 			}
 		default:

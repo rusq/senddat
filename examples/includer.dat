@@ -1,0 +1,16 @@
+ESC "@"
+
+'// Switch to CP 866
+ESC "t" 17
+
+"Switched to CP866 (#17)" LF
+
+'// Include the file in 866 encoding
+@cp866.txt
+LF
+
+"EOF of the included file" LF
+
+'// switching back to default CP.
+ESC "t" 0
+

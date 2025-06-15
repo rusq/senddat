@@ -1,0 +1,5 @@
+This file is in DOS 866 encoding.
+senddat-os would have trouble parsing
+it due to expecting UTF-8
+€‚ƒ„…π†‡‰‹‘’“”•–—™›
+ ΅Ά£¤¥ρ¦§¨©ª«¬­®―ΰαβγδεζηθικλμνξο
