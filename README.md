@@ -1,11 +1,11 @@
 # Open Send Data Tool for ESC/POS
 
-This is an open-source extended implementation of the EPSON Send Data tool for
-ESC/POS printers. It is designed to send raw data to printers using the ESC/POS
-command set.
+This is an open-source extended implementation of the EPSON [Send Data Tool]
+(or, "senddat") for ESC/POS printers. It is designed to send raw data to
+printers using the ESC/POS command set.
 
-It supports parsing \*.dat files, and a publicly avaiable subset of Senddat
-commands found in the documentation:
+It supports parsing \*.dat files, and a subset of Senddat commands discovered
+in the documentation:
 
 - `'// ...` - comment
 - `*N` - delay N milliseconds
@@ -16,8 +16,8 @@ commands found in the documentation:
 Senddat commands are read till the end of line. Maximum line length is 250 chars.
 
 ## Extensions
-In additional to the standard senddat functions, this version is extended to
-support the following:
+In addition to the standard set of senddat functions, this version is
+extended to support the following:
 
 - Go templating language preprocessor (template files up to 1MB)
 - File inclusion via `@file.txt` directive
@@ -33,6 +33,11 @@ Following functions are predefined:
     - `strcat s1 s2` - concatenates strings "s1" and "s2"
     - `strlen s` - returns a length of a unicode string "s"
 
+## Installation
+
+```
+go install github.com/rusq/senddat/cmd/senddat@latest
+```
 
 ## Examples
 
@@ -81,9 +86,11 @@ Following functions are predefined:
     ESC "E" 1 "END OF TEST" LF ESC "E" 0
 ```
 
+For more examples, check the "examples" directory.
+
 ## Motivation
 This project was created to provide an open-source alternative to the EPSON
-Send Data tool, which is not available for all platforms and has limited
+[Send Data Tool], which is not available for all platforms and has limited
 functionality. The goal is to provide a flexible and extensible tool for
 sending raw data to ESC/POS printers, with support for templating and other
 features that make it easier to work with printers in various environments.
@@ -93,15 +100,30 @@ features that make it easier to work with printers in various environments.
 go install github.com/rusq/senddat/cmd/senddat@latest
 ```
 
+## Related Projects and Resources
+- [dotprint] - A command line tool to render
+  ESC/P files.
+- [ESCParser] - Another great command
+  line tool to convert ESC/P files to postscript or pdf.
+- [Send Data Tool] - The original EPSON Send Data tool.
+
+
+
+
 ## Legal
 Senddat-OS is BSD licensed.
 
 ESC/POS is a registered trademark of Seiko Epson Corporation.
 
-The following examples in testdata/POS are taken from ESC/POS manual, and are (c) Seiko Epson Corp.:
+The following examples in testdata/POS are taken from ESC/POS manual, and are
+(c) Seiko Epson Corp.:
 - label.dat
 - page_mode.dat
 - graphics.dat
 - receipt.dat
 
 they are used for unit testing only.
+
+[Send Data Tool]: https://download.ebz.epson.net/dsc/du/02/DriverDownloadInfo.do?LG2=EN&CN2=US&CTI=381&PRN=TM-m30II&OSC=W1164
+[ESCParser]: https://github.com/nzeemin/escparser
+[dotprint]: https://github.com/zub2/dotprint
