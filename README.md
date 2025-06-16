@@ -4,8 +4,8 @@ This is an open-source extended implementation of the EPSON [Send Data Tool]
 (or, "senddat") for ESC/POS printers. It is designed to send raw data to
 printers using the ESC/POS command set.
 
-It supports parsing \*.dat files, and a publicly avaiable subset of Senddat
-commands found in the documentation:
+It supports parsing \*.dat files, and a subset of Senddat commands discovered
+in the documentation:
 
 - `'// ...` - comment
 - `*N` - delay N milliseconds
@@ -16,7 +16,7 @@ commands found in the documentation:
 Senddat commands are read till the end of line. Maximum line length is 250 chars.
 
 ## Extensions
-In additional to the standard set of senddat functions, this version is
+In addition to the standard set of senddat functions, this version is
 extended to support the following:
 
 - Go templating language preprocessor (template files up to 1MB)
